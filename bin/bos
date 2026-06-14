@@ -1,0 +1,48 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+export BOS_ROOT="${BOS_ROOT:-${0:A:h:h}}"
+source "$BOS_ROOT/lib/bos/common.zsh"
+
+command_name="${1:-help}"
+[[ $# -gt 0 ]] && shift
+
+case "$command_name" in
+  help|-h|--help) bos_help ;;
+  start|stop|restart|status|logs|top)
+    source "$BOS_ROOT/lib/bos/lifecycle.zsh"
+    "bos_$command_name" "$@"
+    ;;
+  models)
+    source "$BOS_ROOT/lib/bos/models.zsh"
+    bos_models "$@"
+    ;;
+  model)
+    source "$BOS_ROOT/lib/bos/models.zsh"
+    bos_model "$@"
+    ;;
+  projects|open|init)
+    source "$BOS_ROOT/lib/bos/projects.zsh"
+    "bos_$command_name" "$@"
+    ;;
+  project)
+    source "$BOS_ROOT/lib/bos/projects.zsh"
+    bos_project "$@"
+    ;;
+  sessions|session|opencode)
+    source "$BOS_ROOT/lib/bos/sessions.zsh"
+    "bos_$command_name" "$@"
+    ;;
+  eval)
+    source "$BOS_ROOT/lib/bos/eval.zsh"
+    bos_eval "$@"
+    ;;
+  doctor) bos_doctor ;;
+  version|--version|-v) echo "bos 0.1.0" ;;
+  *)
+    bos_error "Unknown command: $command_name"
+    bos_help
+    return 1
+    ;;
+esac

@@ -1,0 +1,55 @@
+{
+  "default": "default",
+  "profiles": {
+    "default": {
+      "name": "Recommended local coding model",
+      "context": 65536,
+      "output": 32768,
+      "platforms": {
+        "darwin": {
+          "name": "Qwen3.6 35B A3B 4-bit",
+          "runtime": "mlx",
+          "model": "mlx-community/Qwen3.6-35B-A3B-4bit",
+          "opencode_model": "local/mlx-community/Qwen3.6-35B-A3B-4bit",
+          "cache": "models--mlx-community--Qwen3.6-35B-A3B-4bit",
+          "expected_memory_gb": 20
+        },
+        "linux": {
+          "name": "Qwen3 Coder 30B A3B",
+          "runtime": "vllm",
+          "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+          "opencode_model": "local/Qwen/Qwen3-Coder-30B-A3B-Instruct",
+          "cache": "models--Qwen--Qwen3-Coder-30B-A3B-Instruct",
+          "expected_memory_gb": 62,
+          "args": ["--enable-auto-tool-choice", "--tool-call-parser", "qwen3_xml"]
+        }
+      }
+    },
+    "coder-next": {
+      "name": "Larger coding challenger",
+      "context": 65536,
+      "output": 32768,
+      "platforms": {
+        "darwin": {
+          "name": "Qwen3 Coder Next 4-bit",
+          "runtime": "mlx",
+          "model": "mlx-community/Qwen3-Coder-Next-4bit",
+          "opencode_model": "local/mlx-community/Qwen3-Coder-Next-4bit",
+          "cache": "models--mlx-community--Qwen3-Coder-Next-4bit",
+          "expected_memory_gb": 45
+        },
+        "linux": {
+          "name": "Qwen3 Coder Next",
+          "runtime": "vllm",
+          "model": "Qwen/Qwen3-Coder-Next",
+          "opencode_model": "local/Qwen/Qwen3-Coder-Next",
+          "cache": "models--Qwen--Qwen3-Coder-Next",
+          "expected_memory_gb": 160,
+          "supported": false,
+          "unsupported_reason": "The upstream BF16 weights exceed the practical memory budget of many single-workstation systems; configure a validated quantized variant before enabling this profile.",
+          "args": ["--enable-auto-tool-choice", "--tool-call-parser", "qwen3_coder"]
+        }
+      }
+    }
+  }
+}

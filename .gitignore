@@ -1,0 +1,75 @@
+# Secrets and local environment configuration
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Python environments, caches, and tooling
+.venv/
+.venv-*/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# JavaScript dependencies and caches
+node_modules/
+.bun/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Local model weights and caches
+*.gguf
+*.safetensors
+*.mlx
+models/
+.cache/
+huggingface/
+
+# OpenCode local/generated package state
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/bun.lock
+.opencode/.gitignore
+
+# Generated benchmark output
+benchmark/results/
+
+# Logs, temporary files, and process state
+*.log
+*.pid
+*.pid.lock
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+tmp/
+temp/
+
+# Generated test coverage and local BOS development state
+.bos-state/
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+# Local assistant/session history
+.claude/
+.codex/

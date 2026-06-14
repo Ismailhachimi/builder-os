@@ -1,0 +1,24 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell and JSON
+        run: |
+          zsh -n bin/bos install.sh lib/bos/*.zsh tests/*.zsh benchmark/*.sh benchmark/scenarios/*/*.sh
+          jq empty config/models.json config/templates/*.json opencode.json
+          git diff --check
+      - name: Run tests
+        run: ./tests/run.zsh

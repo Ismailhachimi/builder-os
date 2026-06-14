@@ -1,0 +1,25 @@
+{
+  "name": "web",
+  "version": 2,
+  "description": "Full-stack TypeScript monorepo",
+  "defaults": {
+    "database": "postgresql",
+    "orm": "drizzle",
+    "auth": "jwt",
+    "infrastructure": "azure",
+    "visual_direction": "Clean, accessible, responsive, and quietly confident"
+  },
+  "stack": [
+    "pnpm",
+    "turbo",
+    "Next.js",
+    "NestJS",
+    "TypeScript",
+    "Tailwind CSS",
+    "shadcn/ui",
+    "Zod",
+    "Drizzle ORM",
+    "PostgreSQL",
+    "JWT"
+  ]
+}
