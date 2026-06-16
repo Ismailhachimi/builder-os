@@ -48,21 +48,22 @@ The installer automatically installs or configures:
 
 It does not download a model until you start one.
 
-On Linux, install and validate a vLLM environment compatible with your hardware
-and drivers first. BOS does not silently replace accelerator drivers, PyTorch,
-or vLLM. Set `BOS_VLLM_BIN` when `vllm` is not on `PATH`.
+On Linux, BOS creates a dedicated vLLM Python environment at
+`~/venvs/vllm` when vLLM is not already available. BOS does not install or
+replace accelerator drivers or CUDA. Set `BOS_VLLM_BIN` when using a custom
+vLLM executable.
 
 ### Linux Setup
 
-1. Install a vLLM build compatible with the machine's accelerator, drivers,
-   architecture, and Python environment, then verify that `vllm` is executable.
+1. Make sure the machine's accelerator drivers and CUDA stack are working.
 2. Clone Builder OS and run `./install.sh`.
 3. Run `bos doctor`, then `bos start`.
 
-When the local runtime exposes vLLM through a wrapper rather than `PATH`, export
-`BOS_VLLM_BIN=/absolute/path/to/wrapper` before installing and using BOS. The
-wrapper must accept normal `vllm serve ...` arguments. The installer records
-that absolute path in `~/.config/bos/config.json`.
+When the local runtime exposes vLLM through a wrapper or a non-default path,
+export `BOS_VLLM_BIN=/absolute/path/to/wrapper` before installing and using BOS.
+The wrapper must accept normal `vllm serve ...` arguments. The installer records
+that absolute path in `~/.config/bos/config.json`. If no custom path is set,
+the installer creates and uses `~/venvs/vllm/bin/vllm`.
 
 ### 3. Start Building
 

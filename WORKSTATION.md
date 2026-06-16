@@ -39,13 +39,15 @@ validated vLLM environment.
 The macOS launchd service uses its own environment in Application Support because
 macOS background privacy controls prevent launchd from reading environments
 inside protected `Documents` directories. `requirements.txt` reproduces that
-environment. Linux runs a per-user systemd service and expects `vllm` on
-`PATH`, or at the path specified by `BOS_VLLM_BIN`.
+environment. Linux runs a per-user systemd service and uses a dedicated vLLM
+Python environment at `~/venvs/vllm/bin/vllm`, or the path specified by
+`BOS_VLLM_BIN`.
 
-On Linux, prepare a vLLM installation compatible with the machine's
-accelerator, drivers, architecture, and Python environment before running the
-BOS installer. `BOS_VLLM_BIN` may point to an executable wrapper, provided the
-wrapper accepts the same arguments as the `vllm` CLI.
+On Linux, ensure the machine's accelerator drivers and CUDA stack are working
+before running the BOS installer. If vLLM is missing, the installer creates
+`~/venvs/vllm` and installs vLLM there. `BOS_VLLM_BIN` may point to an
+executable wrapper, provided the wrapper accepts the same arguments as the
+`vllm` CLI.
 
 ## Lifecycle
 
