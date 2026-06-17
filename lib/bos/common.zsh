@@ -6,8 +6,47 @@ set -euo pipefail
 
 [[ -d /opt/homebrew/bin ]] && export PATH="$PATH:/opt/homebrew/bin"
 
+bos_load_dotenv() {
+  local env_file="$BOS_ROOT/.env"
+  local line key value
+  [[ -f "$env_file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == export[[:space:]]* ]] && line="${line#export }"
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    [[ "$key" =~ '^[A-Za-z_][A-Za-z0-9_]*$' ]] || continue
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value[2,-2]}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value[2,-2]}"
+    fi
+    [[ -z "$value" ]] && continue
+    [[ -n "${(P)key:-}" ]] && continue
+    export "$key=$value"
+  done < "$env_file"
+}
+
+bos_load_dotenv
+
+bos_is_dgx_spark() {
+  [[ "$(uname -s | tr '[:upper:]' '[:lower:]')" == "linux" ]] || return 1
+  [[ "$(uname -m)" == "aarch64" ]] || return 1
+  command -v nvidia-smi >/dev/null 2>&1 || return 1
+  nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | grep -Eq '(^|[[:space:]])(NVIDIA )?GB10([[:space:]]|$)|DGX Spark'
+}
+
 BOS_CONFIG_HOME="${BOS_CONFIG_HOME:-$HOME/.config/bos}"
 BOS_PLATFORM="${BOS_PLATFORM:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
+BOS_MODEL_PLATFORM_WAS_SET="${BOS_MODEL_PLATFORM+x}"
+BOS_MODEL_PLATFORM="${BOS_MODEL_PLATFORM:-$BOS_PLATFORM}"
+if [[ -z "$BOS_MODEL_PLATFORM_WAS_SET" && "$BOS_MODEL_PLATFORM" == "linux" ]] && bos_is_dgx_spark; then
+  BOS_MODEL_PLATFORM="linux-spark"
+fi
 case "$BOS_PLATFORM" in
   darwin) BOS_DATA_HOME="${BOS_DATA_HOME:-$HOME/Library/Application Support/BuilderOS}" ;;
   linux) BOS_DATA_HOME="${BOS_DATA_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/builder-os}" ;;
@@ -63,9 +102,11 @@ bos_profile_exists() {
 }
 
 bos_profile_value() {
-  jq -r --arg profile "$1" --arg platform "$BOS_PLATFORM" --arg key "$2" '
+  jq -r --arg profile "$1" --arg platform "$BOS_MODEL_PLATFORM" --arg fallback_platform "$BOS_PLATFORM" --arg key "$2" '
     if (.profiles[$profile].platforms[$platform] // {} | has($key)) then
       .profiles[$profile].platforms[$platform][$key]
+    elif (.profiles[$profile].platforms[$fallback_platform] // {} | has($key)) then
+      .profiles[$profile].platforms[$fallback_platform][$key]
     elif (.profiles[$profile] // {} | has($key)) then
       .profiles[$profile][$key]
     else
@@ -78,6 +119,60 @@ bos_profile_supported() {
   [[ "$(bos_profile_value "$1" supported)" != "false" ]]
 }
 
+bos_ollama_manifest_path() {
+  local model="$1" name tag namespace repo
+  name="${model%%:*}"
+  tag="${model#*:}"
+  [[ "$tag" == "$model" ]] && tag="latest"
+  if [[ "$name" == */* ]]; then
+    namespace="${name%%/*}"
+    repo="${name#*/}"
+  else
+    namespace="library"
+    repo="$name"
+  fi
+  print -r -- "$HOME/.ollama/models/manifests/registry.ollama.ai/$namespace/$repo/$tag"
+}
+
+bos_ollama_model_present() {
+  local model="$1" manifest digest blob
+  manifest="$(bos_ollama_manifest_path "$model")"
+  [[ -f "$manifest" ]] || return 1
+  jq empty "$manifest" >/dev/null 2>&1 || return 1
+  while IFS= read -r digest; do
+    [[ -n "$digest" ]] || continue
+    blob="$HOME/.ollama/models/blobs/${digest/:/-}"
+    [[ -f "$blob" ]] || return 1
+  done < <(jq -r '.config.digest, .layers[]?.digest' "$manifest" 2>/dev/null)
+}
+
+bos_profile_cache_complete() {
+  local profile="$1" runtime model cache cache_path snapshot_dir index_file rel
+  runtime="$(bos_profile_value "$profile" runtime)"
+  model="$(bos_profile_value "$profile" model)"
+  if [[ "$runtime" == "ollama" ]]; then
+    bos_ollama_model_present "$model"
+    return $?
+  fi
+
+  cache="$(bos_profile_value "$profile" cache)"
+  [[ -n "$cache" ]] || return 1
+  cache_path="$HOME/.cache/huggingface/hub/$cache"
+  [[ -d "$cache_path" ]] || return 1
+  [[ -z "$(find "$cache_path" -name '*.incomplete' -print -quit 2>/dev/null)" ]] || return 1
+
+  snapshot_dir="$(find "$cache_path/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
+  [[ -n "$snapshot_dir" && -d "$snapshot_dir" ]] || return 1
+
+  index_file="$snapshot_dir/model.safetensors.index.json"
+  if [[ -f "$index_file" ]]; then
+    while IFS= read -r rel; do
+      [[ -n "$rel" ]] || continue
+      [[ -e "$snapshot_dir/$rel" ]] || return 1
+    done < <(jq -r '.weight_map | values[]' "$index_file" 2>/dev/null | sort -u)
+  fi
+}
+
 bos_selected_model() {
   bos_ensure_dirs
   jq -r '.selected_model // "default"' "$BOS_USER_CONFIG"
@@ -88,6 +183,15 @@ bos_active_profile() {
 }
 
 bos_health() {
+  local active runtime model
+  active="$(bos_active_profile)"
+  runtime="$([[ -n "$active" ]] && bos_profile_value "$active" runtime || true)"
+  if [[ "$runtime" == "ollama" ]]; then
+    model="$(bos_profile_value "$active" model)"
+    curl --silent --fail --max-time 2 "http://127.0.0.1:$BOS_PORT/api/tags" |
+      jq -e --arg model "$model" '.models[]?.name == $model or .models[]?.name == ($model + ":latest")' >/dev/null 2>&1
+    return $?
+  fi
   curl --silent --fail --max-time 2 "$BOS_ENDPOINT/models" >/dev/null 2>&1
 }
 
@@ -177,6 +281,10 @@ bos_vllm_bin() {
   fi
 }
 
+bos_ollama_bin() {
+  command -v ollama 2>/dev/null || true
+}
+
 bos_help() {
   cat <<'EOF'
 Builder OS - local agentic development control plane
@@ -205,6 +313,7 @@ Projects:
 Models and evaluation:
   models
   model select PROFILE
+  model fetch [PROFILE]
   eval compare PROFILE PROFILE [--yes]
 
 Other:
@@ -219,7 +328,7 @@ bos_doctor() {
   local failed=0
   case "$BOS_PLATFORM" in
     darwin) echo "ok    macOS ($(uname -m))" ;;
-    linux) echo "ok    Linux ($(uname -m))" ;;
+    linux) echo "ok    Linux ($(uname -m))$([[ "$BOS_MODEL_PLATFORM" == "linux-spark" ]] && echo " / DGX Spark" || true)" ;;
     *) echo "fail  Unsupported platform: $BOS_PLATFORM"; failed=1 ;;
   esac
   local service_command="$([[ "$BOS_PLATFORM" == "darwin" ]] && echo launchctl || echo systemctl)"
@@ -241,6 +350,11 @@ bos_doctor() {
     vllm)
       runtime_bin="$(bos_vllm_bin)"
       [[ -x "$runtime_bin" ]] && echo "ok    vLLM runtime" || { echo "fail  vLLM runtime; install vLLM or set BOS_VLLM_BIN"; failed=1; }
+      bos_has nvidia-smi && echo "ok    GPU metrics (nvidia-smi)" || echo "info  optional GPU metrics unavailable"
+      ;;
+    ollama)
+      runtime_bin="$(bos_ollama_bin)"
+      [[ -x "$runtime_bin" ]] && echo "ok    Ollama runtime" || { echo "fail  Ollama runtime; rerun install.sh"; failed=1; }
       bos_has nvidia-smi && echo "ok    GPU metrics (nvidia-smi)" || echo "info  optional GPU metrics unavailable"
       ;;
     *) echo "fail  Unsupported runtime for $selected: ${runtime:-none}"; failed=1 ;;

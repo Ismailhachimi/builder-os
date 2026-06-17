@@ -31,6 +31,13 @@ system commands where possible.
 - Run `./tests/run.zsh`, `zsh -n bin/bos lib/bos/*.zsh tests/*.zsh`, and
   `git diff --check` before submitting changes.
 
+## Releases
+
+- Before creating a git tag, update the repo version in `bin/bos`, the README
+  release badge, and `CHANGELOG.md`.
+- Git tags should match the shipped CLI version exactly, for example `v0.1.2`
+  for `bos 0.1.2`.
+
 ## Reporting Problems
 
 Use GitHub issues for bugs and feature proposals. For security concerns, follow

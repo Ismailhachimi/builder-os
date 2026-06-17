@@ -1,7 +1,7 @@
 # Builder OS
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-4c8bf5.svg)](CHANGELOG.md)
+[![Release: v0.1.2](https://img.shields.io/badge/release-v0.1.2-4c8bf5.svg)](CHANGELOG.md)
 
 Builder OS (`bos`) gives macOS and Linux workstations one command for local
 agentic development:
@@ -17,8 +17,8 @@ full-stack projects, monitors memory, and compares local models.
 
 ### 1. Requirements
 
-- Apple Silicon macOS with MLX-LM, or Linux with systemd and a working vLLM
-  installation.
+- Apple Silicon macOS with MLX-LM, NVIDIA DGX Spark with Ollama, or generic
+  Linux with systemd and a working vLLM installation.
 - Internet access during installation and the first model download.
 - At least 25 GB free disk space for the default model.
 - 32 GB or more unified memory on macOS. Linux memory requirements depend on
@@ -44,26 +44,38 @@ The installer automatically installs or configures:
 - OpenCode.
 - The global `bos` command.
 - The isolated MLX-LM environment on macOS.
+- Ollama on DGX Spark.
 - OpenCode's runtime-neutral local provider adapter.
 
-It does not download a model until you start one.
+It does not hide model downloads behind `bos start`; fetch the model explicitly
+with `bos model fetch`, or accept the installer's interactive download prompt.
 
-On Linux, BOS creates a dedicated vLLM Python environment at
-`~/venvs/vllm` when vLLM is not already available. BOS does not install or
-replace accelerator drivers or CUDA. Set `BOS_VLLM_BIN` when using a custom
-vLLM executable.
+On DGX Spark, BOS uses Ollama by default and does not create a vLLM Python
+environment. On other Linux machines, BOS creates a dedicated vLLM Python
+environment at `~/venvs/vllm` when vLLM is not already available. BOS does not
+install or replace accelerator drivers or CUDA. Set `BOS_VLLM_BIN` when using a
+custom vLLM executable.
+
+Optional local secrets and machine overrides live in `.env` at the repository
+root. Copy `.env.example` to `.env` and set `HF_TOKEN` there for more reliable
+Hugging Face model downloads. The installer asks for this token on first setup
+and creates `.env` for you; pressing Enter leaves it blank. `.env` is ignored by
+git.
 
 ### Linux Setup
 
 1. Make sure the machine's accelerator drivers and CUDA stack are working.
 2. Clone Builder OS and run `./install.sh`.
-3. Run `bos doctor`, then `bos start`.
+3. Optionally copy `.env.example` to `.env` and set `HF_TOKEN`.
+4. Run `bos doctor`, `bos model fetch`, then `bos start`.
 
-When the local runtime exposes vLLM through a wrapper or a non-default path,
-export `BOS_VLLM_BIN=/absolute/path/to/wrapper` before installing and using BOS.
-The wrapper must accept normal `vllm serve ...` arguments. The installer records
-that absolute path in `~/.config/bos/config.json`. If no custom path is set,
-the installer creates and uses `~/venvs/vllm/bin/vllm`.
+DGX Spark is detected as `linux-spark` and uses Ollama models such as
+`qwen3.6:35b`. Generic Linux uses vLLM. When the local runtime exposes
+vLLM through a wrapper or a non-default path, export
+`BOS_VLLM_BIN=/absolute/path/to/wrapper` before installing and using BOS. The
+wrapper must accept normal `vllm serve ...` arguments. The installer records that
+absolute path in `~/.config/bos/config.json`. If no custom path is set on generic
+Linux, the installer creates and uses `~/venvs/vllm/bin/vllm`.
 
 ### 3. Start Building
 
@@ -73,8 +85,14 @@ Open a new terminal after installation:
 bos start
 ```
 
-The first start downloads the recommended model, approximately 20 GB. After the
-download, inference and normal starts are local.
+If the model is not downloaded yet, run:
+
+```sh
+bos model fetch
+bos start
+```
+
+After the download, inference and normal starts are local.
 
 Open the current repository in the coding agent:
 
@@ -126,6 +144,7 @@ bos init my-app              # Create a new project interactively
 
 bos models                   # Show available and active models
 bos model select default     # Select the model used by the next start
+bos model fetch              # Pre-download the selected model
 bos eval compare default coder-next
 bos doctor                   # Check the installation
 ```
@@ -196,29 +215,57 @@ does not yet expose directly. Normal workflows should use BOS commands.
 Builder OS ships with two profile names whose runtime/model resolves for the
 current platform:
 
-| Profile | macOS / MLX | Linux / vLLM |
-| --- | --- | --- |
-| `default` | Qwen3.6 35B A3B 4-bit | Qwen3 Coder 30B A3B |
-| `coder-next` | Qwen3 Coder Next 4-bit | Upstream BF16 profile is listed but intentionally unavailable |
+| Profile | macOS / MLX | DGX Spark / Ollama | Generic Linux / vLLM |
+| --- | --- | --- | --- |
+| `default` | Qwen3.6 35B A3B 4-bit | qwen3.6 35B A3B | Qwen3 Coder 30B A3B AWQ |
+| `coder-next` | Qwen3 Coder Next 4-bit | Qwen3 Coder Next | Qwen3 Coder Next NVFP4 GB10 |
 
 Only one model runs at a time.
 
-The upstream Linux Coder Next weights need roughly 160 GB before practical
-serving overhead, so BOS marks that profile unavailable by default. Add and
-evaluate a known-good quantized variant on hardware with sufficient headroom
-before enabling it; BOS will not pretend an unsafe profile fits.
+DGX Spark profiles use Ollama by default because Spark's GB10 software stack is
+not the same as generic Linux CUDA. Ollama NVFP4 tags are currently macOS/MLX
+specific, so Spark's Ollama default avoids the `-nvfp4` tag. Generic Linux
+profiles use quantized vLLM checkpoints and should avoid full upstream BF16
+weights for normal BOS workflows.
 
 ```sh
 bos model select coder-next
+bos model fetch coder-next
 bos restart
 ```
 
 Selecting a model never interrupts the active service. Restart explicitly when
 you want to switch.
 
+### DGX Spark vLLM Docker
+
+The Spark vLLM path is intentionally not the default BOS install path. NVIDIA's
+Spark guidance uses Spark-specific vLLM containers or source builds for NVFP4
+support, not the generic `pip install vllm` path. Treat it as an advanced runtime
+target for a future BOS profile.
+
+The shape of that setup is:
+
+```sh
+docker run --rm --gpus all --network host \
+  -e HF_TOKEN="$HF_TOKEN" \
+  vllm/vllm-openai:nightly-aarch64 \
+  --model nvidia/Qwen3.6-35B-A3B-NVFP4 \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --served-model-name nvidia/Qwen3.6-35B-A3B-NVFP4 \
+  --kv-cache-dtype fp8 \
+  --attention-backend flashinfer \
+  --moe-backend marlin
+```
+
+Use NVIDIA's current Spark vLLM page and the vLLM Qwen recipe as the source of
+truth before turning this into a BOS-managed runtime.
+
 ## Privacy And Ownership
 
-- Model inference runs locally through MLX-LM on macOS or vLLM on Linux.
+- Model inference runs locally through MLX-LM on macOS, Ollama on DGX Spark, or
+  vLLM on generic Linux.
 - OpenCode web tools and cloud providers are disabled by the shipped policy.
 - Projects remain normal independent Git repositories.
 - BOS configuration is inspectable JSON under `~/.config/bos/`.
@@ -251,7 +298,8 @@ bos logs --lines 100 --no-follow
 Builder OS is an independent project by
 [@IsmailHachimi](https://github.com/IsmailHachimi). It integrates with
 [OpenCode](https://github.com/anomalyco/opencode) and
-[MLX-LM](https://github.com/ml-explore/mlx-lm), and
+[MLX-LM](https://github.com/ml-explore/mlx-lm),
+[Ollama](https://ollama.com/), and
 [vLLM](https://github.com/vllm-project/vllm) as external tools; their source
 code is not bundled into this repository. Builder OS is not affiliated with or
 endorsed by those projects.

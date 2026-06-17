@@ -4,6 +4,7 @@ source "${0:A:h}/test-helper.zsh"
 
 output="$("$BOS_ROOT/bin/bos" help)"
 assert_contains "$output" "start [--model PROFILE]"
+assert_contains "$output" "model fetch [PROFILE]"
 
 output="$("$BOS_ROOT/bin/bos" models)"
 assert_contains "$output" "coder-next"

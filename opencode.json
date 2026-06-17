@@ -30,6 +30,20 @@
             "output": 32768
           }
         },
+        "qwen3.6:35b": {
+          "name": "Qwen3.6 35B A3B (DGX Spark default)",
+          "limit": {
+            "context": 65536,
+            "output": 32768
+          }
+        },
+        "qwen3-coder-next": {
+          "name": "Qwen3 Coder Next (DGX Spark challenger)",
+          "limit": {
+            "context": 65536,
+            "output": 32768
+          }
+        },
         "Qwen/Qwen3-Coder-30B-A3B-Instruct": {
           "name": "Qwen3 Coder 30B A3B (Linux default)",
           "limit": {

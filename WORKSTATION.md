@@ -36,22 +36,30 @@ validated vLLM environment.
 | Model profiles | `config/models.json` |
 | Template profiles | `config/templates/` and `~/.config/bos/templates/` |
 
+BOS loads a repository-root `.env` file when present. Use it for local machine
+secrets such as `HF_TOKEN`; copy `.env.example` to `.env` and keep real values
+out of git. The generated model service exports Hugging Face tokens into the
+runtime process so background downloads use the same credentials. Linux defaults
+to `HF_HUB_DISABLE_XET=1` to prefer standard HTTP model downloads.
+
 The macOS launchd service uses its own environment in Application Support because
 macOS background privacy controls prevent launchd from reading environments
 inside protected `Documents` directories. `requirements.txt` reproduces that
-environment. Linux runs a per-user systemd service and uses a dedicated vLLM
+environment. Linux runs a per-user systemd service. DGX Spark is detected as
+`linux-spark` and uses Ollama by default; generic Linux uses a dedicated vLLM
 Python environment at `~/venvs/vllm/bin/vllm`, or the path specified by
 `BOS_VLLM_BIN`.
 
 On Linux, ensure the machine's accelerator drivers and CUDA stack are working
-before running the BOS installer. If vLLM is missing, the installer creates
-`~/venvs/vllm` and installs vLLM there. `BOS_VLLM_BIN` may point to an
-executable wrapper, provided the wrapper accepts the same arguments as the
-`vllm` CLI.
+before running the BOS installer. On DGX Spark, the installer checks or installs
+Ollama. On generic Linux, if vLLM is missing, the installer creates
+`~/venvs/vllm` and installs vLLM there. `BOS_VLLM_BIN` may point to an executable
+wrapper, provided the wrapper accepts the same arguments as the `vllm` CLI.
 
 ## Lifecycle
 
 ```sh
+bos model fetch
 bos start
 bos status
 bos logs
@@ -78,16 +86,44 @@ cache name, expected memory, and runtime arguments.
 ```sh
 bos models
 bos model select <profile>
+bos model fetch [profile]
 bos restart
 ```
 
 Selection and runtime are deliberately separate. Selecting a model never
-interrupts the active service or OpenCode sessions.
+interrupts the active service or OpenCode sessions. Fetching is explicit:
+`bos start` expects the selected model to already be present and tells the user to
+run `bos model fetch` when it is missing.
 
 Profiles may set `supported: false` with an `unsupported_reason` for a specific
-platform. BOS lists those profiles but refuses to select or start them. The
-shipped Linux Coder Next profile uses this guard because its upstream BF16
-weights exceed the practical memory budget of many single-workstation systems.
+platform. BOS lists those profiles but refuses to select or start them. Spark
+profiles should prefer validated Ollama models or NVIDIA's Spark-specific vLLM
+container path. Generic Linux model profiles should prefer validated quantized
+vLLM checkpoints over full upstream BF16 weights unless the profile is explicitly
+marked as a large experimental target.
+
+### DGX Spark vLLM Docker
+
+Do not use generic `pip install vllm` as the Spark default. NVIDIA's Spark vLLM
+guidance uses `vllm/vllm-openai:nightly-aarch64` or a Spark-specific source build
+for NVFP4 support. Ollama NVFP4 tags are currently macOS/MLX-specific, so the
+Spark Ollama default uses `qwen3.6:35b`. A future BOS runtime can wrap the
+NVIDIA container path for Spark NVFP4.
+
+Reference command shape:
+
+```sh
+docker run --rm --gpus all --network host \
+  -e HF_TOKEN="$HF_TOKEN" \
+  vllm/vllm-openai:nightly-aarch64 \
+  --model nvidia/Qwen3.6-35B-A3B-NVFP4 \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --served-model-name nvidia/Qwen3.6-35B-A3B-NVFP4 \
+  --kv-cache-dtype fp8 \
+  --attention-backend flashinfer \
+  --moe-backend marlin
+```
 
 ## Projects
 
@@ -187,7 +223,8 @@ bos logs --lines 100 --no-follow
 ```
 
 - If port `8080` is owned by an unmanaged process, BOS refuses to terminate it.
-- If a model download is interrupted, Hugging Face resumes partial files.
+- If a generic Linux model download is interrupted, Hugging Face resumes partial
+  files. Spark Ollama models can be resumed with `bos model fetch`.
 - If OpenCode is missing, reinstall it from its official installer, then run
   `bos doctor`.
 - If a selected model differs from the active model, run `bos restart`.

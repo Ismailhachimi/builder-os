@@ -30,6 +30,7 @@ chmod +x "$TEST_TMP/bin/"*
 mkdir -p "$BOS_MLX_VENV/bin"
 touch "$BOS_MLX_VENV/bin/mlx_lm.server"
 chmod +x "$BOS_MLX_VENV/bin/mlx_lm.server"
+mkdir -p "$HOME/.cache/huggingface/hub/models--mlx-community--Qwen3.6-35B-A3B-4bit/snapshots/test"
 
 output="$("$BOS_ROOT/bin/bos" start --model default)"
 assert_contains "$output" "Ready"

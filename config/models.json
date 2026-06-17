@@ -14,14 +14,21 @@
           "cache": "models--mlx-community--Qwen3.6-35B-A3B-4bit",
           "expected_memory_gb": 20
         },
+        "linux-spark": {
+          "name": "Qwen3.6 35B A3B",
+          "runtime": "ollama",
+          "model": "qwen3.6:35b",
+          "opencode_model": "local/qwen3.6:35b",
+          "expected_memory_gb": 24
+        },
         "linux": {
-          "name": "Qwen3 Coder 30B A3B",
+          "name": "Qwen3 Coder 30B A3B AWQ",
           "runtime": "vllm",
-          "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-          "opencode_model": "local/Qwen/Qwen3-Coder-30B-A3B-Instruct",
-          "cache": "models--Qwen--Qwen3-Coder-30B-A3B-Instruct",
-          "expected_memory_gb": 62,
-          "args": ["--enable-auto-tool-choice", "--tool-call-parser", "qwen3_xml"]
+          "model": "QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ",
+          "opencode_model": "local/QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ",
+          "cache": "models--QuantTrio--Qwen3-Coder-30B-A3B-Instruct-AWQ",
+          "expected_memory_gb": 24,
+          "args": ["--enforce-eager", "--enable-auto-tool-choice", "--tool-call-parser", "qwen3_xml"]
         }
       }
     },
@@ -38,15 +45,20 @@
           "cache": "models--mlx-community--Qwen3-Coder-Next-4bit",
           "expected_memory_gb": 45
         },
-        "linux": {
+        "linux-spark": {
           "name": "Qwen3 Coder Next",
+          "runtime": "ollama",
+          "model": "qwen3-coder-next",
+          "opencode_model": "local/qwen3-coder-next",
+          "expected_memory_gb": 52
+        },
+        "linux": {
+          "name": "Qwen3 Coder Next NVFP4 GB10",
           "runtime": "vllm",
-          "model": "Qwen/Qwen3-Coder-Next",
-          "opencode_model": "local/Qwen/Qwen3-Coder-Next",
-          "cache": "models--Qwen--Qwen3-Coder-Next",
-          "expected_memory_gb": 160,
-          "supported": false,
-          "unsupported_reason": "The upstream BF16 weights exceed the practical memory budget of many single-workstation systems; configure a validated quantized variant before enabling this profile.",
+          "model": "saricles/Qwen3-Coder-Next-NVFP4-GB10",
+          "opencode_model": "local/saricles/Qwen3-Coder-Next-NVFP4-GB10",
+          "cache": "models--saricles--Qwen3-Coder-Next-NVFP4-GB10",
+          "expected_memory_gb": 48,
           "args": ["--enable-auto-tool-choice", "--tool-call-parser", "qwen3_coder"]
         }
       }

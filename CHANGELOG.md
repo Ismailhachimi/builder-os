@@ -2,6 +2,16 @@
 
 All notable Builder OS changes will be documented here.
 
+## 0.1.2 - 2026-06-17
+
+- Added DGX Spark detection with Ollama as the default Spark runtime.
+- Made model downloads explicit through `bos model fetch` and the installer
+  prompt; `bos start` now requires the selected model to already be present.
+- Added Linux Node.js tooling bootstrap for generated web projects.
+- Added `.env` loading for local secrets such as `HF_TOKEN`.
+- Improved Linux model lifecycle progress, stop behavior, and test coverage.
+- Documented NVIDIA's Spark vLLM Docker path as an advanced runtime option.
+
 ## 0.1.0 - 2026-06-14
 
 Initial public release.

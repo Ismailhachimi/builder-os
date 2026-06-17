@@ -2,7 +2,12 @@
 
 source "${0:A:h}/test-helper.zsh"
 
-for command_name in node pnpm brew; do
+cat > "$TEST_TMP/bin/node" <<'EOF'
+#!/bin/zsh
+[[ "$1" == "-v" ]] && echo v22.13.0
+exit 0
+EOF
+for command_name in pnpm brew; do
   cat > "$TEST_TMP/bin/$command_name" <<'EOF'
 #!/bin/zsh
 exit 0
@@ -10,6 +15,7 @@ EOF
 done
 cat > "$TEST_TMP/bin/git" <<'EOF'
 #!/bin/zsh
+[[ "$1" == "init" ]] && mkdir -p .git
 exit 0
 EOF
 chmod +x "$TEST_TMP/bin/"*
@@ -63,6 +69,16 @@ none_target="$TEST_TMP/no-db-project"
 assert_eq "$(jq -r .orm "$none_target/.bos/project.json")" "none"
 [[ ! -d "$none_target/apps/api/prisma" && ! -f "$none_target/apps/api/drizzle.config.ts" ]] && no_orm_files=yes || no_orm_files=no
 assert_eq "$no_orm_files" "yes"
+
+partial_target="$TEST_TMP/partial-project"
+mkdir -p "$partial_target/.bos"
+print -r -- '{"schema_version":2,"name":"partial-demo","template":"web","description":"Partial","visual_direction":"Simple","database":"none","orm":"none","auth":"jwt","infrastructure":"azure"}' > "$partial_target/.bos/project.json"
+output="$("$BOS_ROOT/bin/bos" init partial-demo --path "$partial_target")"
+assert_contains "$output" "Resuming incomplete BOS project"
+assert_contains "$output" "Created and registered partial-demo"
+assert_contains "$output" "Database:       none"
+[[ -d "$partial_target/.git" ]] && partial_git=yes || partial_git=no
+assert_eq "$partial_git" "yes"
 
 if "$BOS_ROOT/bin/bos" init invalid-orm --path "$TEST_TMP/invalid-orm" --orm sequel --yes >/dev/null 2>&1; then
   invalid_orm_rejected=no

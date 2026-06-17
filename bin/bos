@@ -39,7 +39,7 @@ case "$command_name" in
     bos_eval "$@"
     ;;
   doctor) bos_doctor ;;
-  version|--version|-v) echo "bos 0.1.0" ;;
+  version|--version|-v) echo "bos 0.1.2" ;;
   *)
     bos_error "Unknown command: $command_name"
     bos_help

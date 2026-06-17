@@ -2,7 +2,9 @@
 
 source "${0:A:h}/test-helper.zsh"
 export BOS_PLATFORM=linux
+export BOS_MODEL_PLATFORM=linux
 export BOS_VLLM_BIN="$TEST_TMP/bin/vllm"
+export HF_TOKEN="hf_test_token"
 
 cat > "$TEST_TMP/bin/systemctl" <<'EOF'
 #!/bin/zsh
@@ -34,21 +36,33 @@ case "$*" in
 esac
 EOF
 chmod +x "$TEST_TMP/bin/"*
+mkdir -p "$HOME/.cache/huggingface/hub/models--QuantTrio--Qwen3-Coder-30B-A3B-Instruct-AWQ/snapshots/test"
 
 output="$("$BOS_ROOT/bin/bos" start --model default)"
 assert_contains "$output" "Ready"
 assert_eq "$(jq -r .platform "$BOS_DATA_HOME/runtime/model.json")" "linux"
 assert_eq "$(jq -r .runtime "$BOS_DATA_HOME/runtime/model.json")" "vllm"
-assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" "QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ"
+assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" "--enforce-eager"
+assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" 'export PATH='
+assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" "export HF_HUB_DISABLE_XET=1"
+assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" "export HF_TOKEN=hf_test_token"
+assert_contains "$(cat "$BOS_DATA_HOME/runtime/model-service.zsh")" "export HUGGING_FACE_HUB_TOKEN=hf_test_token"
 assert_contains "$(cat "$BOS_DATA_HOME/runtime/builder-os-model.service")" "ExecStart="
 
 output="$("$BOS_ROOT/bin/bos" status)"
 assert_contains "$output" "linux / vllm"
 
-output="$("$BOS_ROOT/bin/bos" model select coder-next 2>&1 || true)"
-assert_contains "$output" "exceed the practical memory budget"
+output="$("$BOS_ROOT/bin/bos" model select coder-next)"
+assert_contains "$output" "Selected default model: coder-next"
 
 output="$("$BOS_ROOT/bin/bos" stop)"
 assert_contains "$output" "stopped"
+
+touch "$HOME/service-loaded"
+rm -f "$HOME/healthy"
+output="$("$BOS_ROOT/bin/bos" start --model default)"
+assert_contains "$output" "Restarting unhealthy model service"
+assert_contains "$output" "Ready"
 
 finish_tests

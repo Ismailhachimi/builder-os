@@ -1,20 +1,26 @@
 #!/bin/zsh
 
 bos_write_service_script() {
-  local profile="$1" runtime model output context runtime_bin cache_name offline=0 arg
+  local profile="$1" runtime model output context runtime_bin runtime_dir cache_name offline=0 append_args=1 arg
   runtime="$(bos_profile_value "$profile" runtime)"
   model="$(bos_profile_value "$profile" model)"
   output="$(bos_profile_value "$profile" output)"
   context="$(bos_profile_value "$profile" context)"
   cache_name="$(bos_profile_value "$profile" cache)"
-  [[ -n "$cache_name" && -d "$HOME/.cache/huggingface/hub/$cache_name" &&
-    -z "$(find "$HOME/.cache/huggingface/hub/$cache_name" -name '*.incomplete' -print -quit 2>/dev/null)" ]] && offline=1
+  bos_profile_cache_complete "$profile" && offline=1
 
   {
     print '#!/bin/zsh'
     print 'set -euo pipefail'
     print -r -- "export HF_HUB_OFFLINE=${offline}"
+    print -r -- "export HF_HUB_DISABLE_XET=${HF_HUB_DISABLE_XET:-1}"
     print -r -- "export HF_HOME=${(q)HOME}/.cache/huggingface"
+    [[ -n "${HF_TOKEN:-}" ]] && print -r -- "export HF_TOKEN=${(q)HF_TOKEN}"
+    if [[ -n "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
+      print -r -- "export HUGGING_FACE_HUB_TOKEN=${(q)HUGGING_FACE_HUB_TOKEN}"
+    elif [[ -n "${HF_TOKEN:-}" ]]; then
+      print -r -- "export HUGGING_FACE_HUB_TOKEN=${(q)HF_TOKEN}"
+    fi
     case "$runtime" in
       mlx)
         runtime_bin="$BOS_MLX_VENV/bin/mlx_lm.server"
@@ -24,14 +30,27 @@ bos_write_service_script() {
       vllm)
         runtime_bin="$(bos_vllm_bin)"
         [[ -x "$runtime_bin" ]] || { bos_die "vLLM not found. Install it or set BOS_VLLM_BIN."; return 1; }
+        runtime_dir="${runtime_bin:h}"
+        print -r -- "export PATH=${(q)runtime_dir}:\$PATH"
         printf 'exec %q serve %q --host 127.0.0.1 --port %q --served-model-name %q --max-model-len %q' "$runtime_bin" "$model" "$BOS_PORT" "$model" "$context"
+        ;;
+      ollama)
+        append_args=0
+        runtime_bin="$(bos_ollama_bin)"
+        [[ -x "$runtime_bin" ]] || { bos_die "Ollama not found. Run: $BOS_ROOT/install.sh"; return 1; }
+        print -r -- "export OLLAMA_HOST=127.0.0.1:${BOS_PORT}"
+        printf 'exec %q serve' "$runtime_bin"
         ;;
       *) bos_die "Unsupported runtime: $runtime"; return 1 ;;
     esac
-    while IFS= read -r arg; do printf ' %q' "$arg"; done < <(jq -r --arg profile "$profile" --arg platform "$BOS_PLATFORM" '.profiles[$profile].platforms[$platform].args[]? // empty' "$BOS_MODELS")
-    print
+    if (( append_args )); then
+      while IFS= read -r arg; do printf ' %q' "$arg"; done < <(jq -r --arg profile "$profile" --arg platform "$BOS_MODEL_PLATFORM" --arg fallback_platform "$BOS_PLATFORM" '
+        .profiles[$profile].platforms[$platform].args[]? // .profiles[$profile].platforms[$fallback_platform].args[]? // empty
+      ' "$BOS_MODELS")
+      print
+    fi
   } > "$BOS_SERVICE_SCRIPT"
-  chmod +x "$BOS_SERVICE_SCRIPT"
+  chmod 700 "$BOS_SERVICE_SCRIPT"
 }
 
 bos_write_macos_service() {
@@ -64,6 +83,7 @@ WorkingDirectory=$BOS_DATA_HOME
 StandardOutput=append:$BOS_LOG_DIR/model.log
 StandardError=append:$BOS_LOG_DIR/model.error.log
 Restart=no
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target
@@ -93,7 +113,7 @@ bos_service_start() {
 bos_service_stop() {
   case "$BOS_PLATFORM" in
     darwin) launchctl bootout --wait "gui/$(id -u)/$BOS_LAUNCHD_LABEL" ;;
-    linux) systemctl --user stop builder-os-model.service ;;
+    linux) systemctl --user stop --no-block builder-os-model.service ;;
     *) return 1 ;;
   esac
 }

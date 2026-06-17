@@ -87,27 +87,101 @@ bos_prompt_value() {
   print -r -- "${answer:-$default}"
 }
 
+bos_node_version_ok() {
+  local version="${1#v}" major minor rest
+  major="${version%%.*}"
+  rest="${version#*.}"
+  minor="${rest%%.*}"
+  [[ "$major" == <-> && "$minor" == <-> ]] || return 1
+  (( major > 22 || (major == 22 && minor >= 13) ))
+}
+
+bos_use_managed_node() {
+  local node_root="${XDG_DATA_HOME:-$HOME/.local/share}/builder-os/node/current"
+  [[ -x "$node_root/bin/node" ]] || return 1
+  export PATH="$node_root/bin:$PATH"
+  rehash 2>/dev/null || true
+}
+
+bos_install_linux_node() {
+  local data_root="${XDG_DATA_HOME:-$HOME/.local/share}/builder-os/node"
+  local node_arch version archive url tmp install_dir
+
+  case "$(uname -m)" in
+    x86_64) node_arch="x64" ;;
+    aarch64|arm64) node_arch="arm64" ;;
+    *) bos_die "Unsupported Node.js architecture: $(uname -m)"; return 1 ;;
+  esac
+
+  bos_has curl || { bos_die "curl is required to install Node.js."; return 1; }
+  bos_has tar || { bos_die "tar is required to install Node.js."; return 1; }
+
+  bos_info "Installing latest Node.js LTS for Linux..."
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/bos-node.XXXXXX")"
+  curl -fsSL https://nodejs.org/dist/index.tab -o "$tmp/index.tab" ||
+    { rm -rf "$tmp"; bos_die "Could not download the Node.js release index."; return 1; }
+  version="$(awk 'NR > 1 && $10 != "-" { print $1; exit }' "$tmp/index.tab")" ||
+    { rm -rf "$tmp"; bos_die "Could not resolve the latest Node.js LTS release."; return 1; }
+  [[ -n "$version" ]] || { bos_die "Could not resolve the latest Node.js LTS release."; return 1; }
+
+  archive="node-${version}-linux-${node_arch}.tar.xz"
+  url="https://nodejs.org/dist/${version}/${archive}"
+  install_dir="$data_root/node-${version}-linux-${node_arch}"
+
+  mkdir -p "$data_root"
+  (
+    cd "$tmp" &&
+      curl -fsSLO "$url" &&
+      tar -xJf "$archive" &&
+      rm -rf "$install_dir" &&
+      mv "${archive%.tar.xz}" "$install_dir"
+  ) || {
+    rm -rf "$tmp"
+    bos_die "Node.js installation failed from $url."
+    return 1
+  }
+  rm -rf "$tmp"
+  ln -sfn "$install_dir" "$data_root/current"
+  bos_use_managed_node || { bos_die "Node.js was installed, but could not be activated."; return 1; }
+}
+
 bos_install_web_tools() {
-  if ! bos_has node; then
+  bos_use_managed_node || true
+  local node_version=""
+  bos_has node && node_version="$(node -v 2>/dev/null || true)"
+
+  if [[ -z "$node_version" ]] || ! bos_node_version_ok "$node_version"; then
     case "$BOS_PLATFORM" in
       darwin) bos_info "Installing Node.js with Homebrew..."; brew install node ;;
-      linux)
-        bos_has corepack || { bos_die "Node.js is missing. Install a current Node.js release, then rerun bos init."; return 1; }
-        ;;
+      linux) bos_install_linux_node ;;
     esac
+    bos_has node || { bos_die "Node.js installation completed, but node is still unavailable."; return 1; }
+    node_version="$(node -v 2>/dev/null || true)"
+    bos_node_version_ok "$node_version" || { bos_die "Node.js $node_version is too old; BOS needs Node.js 22.13 or newer."; return 1; }
   fi
   if ! bos_has pnpm; then
     if bos_has corepack; then
-      bos_info "Enabling pnpm with Corepack..."
-      corepack enable pnpm
+      bos_info "Preparing pnpm with Corepack..."
+      corepack prepare pnpm@10.12.1 --activate
     elif [[ "$BOS_PLATFORM" == "darwin" ]] && bos_has brew; then
       bos_info "Installing pnpm with Homebrew..."
       brew install pnpm
+    elif [[ "$BOS_PLATFORM" == "linux" ]] && bos_has npm; then
+      bos_info "Installing pnpm with npm..."
+      npm install -g pnpm@10.12.1
     else
       bos_die "pnpm is missing. Install pnpm or enable Corepack, then rerun bos init."
       return 1
     fi
+    bos_has pnpm || { bos_die "pnpm installation completed, but pnpm is still unavailable."; return 1; }
   fi
+}
+
+bos_init_recoverable_project() {
+  local project_dir="$1" name="$2"
+  [[ -f "$project_dir/.bos/project.json" ]] || return 1
+  [[ ! -d "$project_dir/.git" ]] || return 1
+  [[ "$(jq -r '.name // empty' "$project_dir/.bos/project.json" 2>/dev/null)" == "$name" ]] || return 1
 }
 
 bos_scaffold_web() {
@@ -405,18 +479,38 @@ bos_init() {
   [[ -f "$template_file" ]] || { bos_die "Unknown template: $template"; return 1; }
   local base_template="$(jq -r '.extends // .name // empty' "$template_file")"
   [[ "$base_template" == "web" ]] || { bos_die "Template $template requires an unsupported generator: $base_template"; return 1; }
+  bos_install_web_tools
   if [[ "$yes" -eq 0 && "$explicit_path" -eq 0 ]]; then
     project_dir="$(bos_prompt_value "Project path" "$project_dir")"
     [[ -n "$project_dir" ]] || { bos_die "Project path cannot be empty."; return 1; }
   fi
   project_dir="${project_dir:A}"
-  [[ ! -e "$project_dir" || -z "$(find "$project_dir" -mindepth 1 -print -quit 2>/dev/null)" ]] || { bos_die "Refusing to overwrite non-empty directory: $project_dir"; return 1; }
+  local resume_existing=0
+  if [[ -e "$project_dir" && -n "$(find "$project_dir" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+    if bos_init_recoverable_project "$project_dir" "$name"; then
+      resume_existing=1
+      bos_info "Resuming incomplete BOS project: $project_dir"
+    else
+      bos_die "Refusing to overwrite non-empty directory: $project_dir"
+      return 1
+    fi
+  fi
   local description="$(jq -r '.defaults.description // "A thoughtfully designed web product"' "$template_file")"
   local visual="$(jq -r '.defaults.visual_direction // "Clean, accessible, responsive, and quietly confident"' "$template_file")"
   local database="$(jq -r '.defaults.database // "postgresql"' "$template_file")" database_url="postgresql://postgres:postgres@localhost:5432/${name//-/_}"
   local orm="${orm_override:-$(jq -r '.defaults.orm // "drizzle"' "$template_file")}"
   local auth="$(jq -r '.defaults.auth // "jwt"' "$template_file")" infrastructure="$(jq -r '.defaults.infrastructure // "azure"' "$template_file")"
-  if [[ "$yes" -eq 0 ]]; then
+  if (( resume_existing )); then
+    description="$(jq -r '.description // "A thoughtfully designed web product"' "$project_dir/.bos/project.json")"
+    visual="$(jq -r '.visual_direction // "Clean, accessible, responsive, and quietly confident"' "$project_dir/.bos/project.json")"
+    database="$(jq -r '.database // "postgresql"' "$project_dir/.bos/project.json")"
+    orm="$(jq -r '.orm // "drizzle"' "$project_dir/.bos/project.json")"
+    auth="$(jq -r '.auth // "jwt"' "$project_dir/.bos/project.json")"
+    infrastructure="$(jq -r '.infrastructure // "azure"' "$project_dir/.bos/project.json")"
+    if [[ -f "$project_dir/.env.local" ]]; then
+      database_url="$(sed -n 's/^DATABASE_URL=//p' "$project_dir/.env.local" | head -1)"
+    fi
+  elif [[ "$yes" -eq 0 ]]; then
     description="$(bos_prompt_value "Product description" "$description")"
     visual="$(bos_prompt_value "Visual direction" "$visual")"
     database="$(bos_prompt_value "Database (postgresql/mongodb/none)" "$database")"
@@ -448,12 +542,11 @@ ORM:            $orm
 Authentication: $auth
 Infrastructure: $infrastructure
 EOF
-  if [[ "$yes" -eq 0 ]]; then
+  if [[ "$yes" -eq 0 && "$resume_existing" -eq 0 ]]; then
     print -n "Create and install this project? [Y/n]: "
     local confirm; read -r confirm
     [[ "${confirm:l}" != "n" ]] || { bos_info "Cancelled."; return 0; }
   fi
-  bos_install_web_tools
   mkdir -p "$project_dir"
   bos_scaffold_web "$project_dir" "$name" "$description" "$visual" "$database" "$database_url" "$orm" "$auth" "$infrastructure"
   jq --arg template "$template" '.template=$template' "$project_dir/.bos/project.json" > "$project_dir/.bos/project.json.next"
