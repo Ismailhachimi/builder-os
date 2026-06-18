@@ -4,7 +4,7 @@ set -euo pipefail
 
 : "${BOS_ROOT:?BOS_ROOT must point to the Builder OS repository}"
 
-[[ -d /opt/homebrew/bin ]] && export PATH="$PATH:/opt/homebrew/bin"
+[[ "${BOS_PLATFORM:-$(uname -s | tr '[:upper:]' '[:lower:]')}" == "darwin" && -d /opt/homebrew/bin ]] && export PATH="$PATH:/opt/homebrew/bin"
 
 bos_load_dotenv() {
   local env_file="$BOS_ROOT/.env"

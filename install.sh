@@ -54,8 +54,14 @@ env_has_value() {
 }
 
 env_set_key() {
-  local file="$1" key="$2" value="$3" assignment="$key=$(shell_quote "$value")"
-  local tmp="$file.tmp.$$" line replaced=0
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local assignment
+  local tmp line replaced=0
+
+  assignment="$key=$(shell_quote "$value")"
+  tmp="$file.tmp.$$"
 
   if [[ -f "$file" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do

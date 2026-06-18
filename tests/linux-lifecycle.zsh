@@ -5,6 +5,7 @@ export BOS_PLATFORM=linux
 export BOS_MODEL_PLATFORM=linux
 export BOS_VLLM_BIN="$TEST_TMP/bin/vllm"
 export HF_TOKEN="hf_test_token"
+export HF_HUB_DISABLE_XET=1
 
 cat > "$TEST_TMP/bin/systemctl" <<'EOF'
 #!/bin/zsh
