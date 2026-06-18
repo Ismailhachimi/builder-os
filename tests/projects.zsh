@@ -18,6 +18,13 @@ cat > "$TEST_TMP/bin/git" <<'EOF'
 [[ "$1" == "init" ]] && mkdir -p .git
 exit 0
 EOF
+cat > "$TEST_TMP/bin/docker" <<EOF
+#!/bin/zsh
+print -r -- "\$PWD :: \$*" >> "$TEST_TMP/docker-calls"
+[[ "\$*" == "compose version" ]] && exit 0
+[[ "\$*" == "compose config --services" ]] && { print web; print api; print postgres; exit 0; }
+exit 0
+EOF
 chmod +x "$TEST_TMP/bin/"*
 
 target="$TEST_TMP/generated"
@@ -32,10 +39,20 @@ assert_eq "$(jq -r .template "$target/.bos/project.json")" "web"
 [[ -f "$target/apps/api/drizzle.config.ts" && -f "$target/apps/api/src/db/schema.ts" ]] && drizzle_exists=yes || drizzle_exists=no
 assert_eq "$drizzle_exists" "yes"
 assert_eq "$(jq -r '.dependencies["drizzle-orm"]' "$target/apps/api/package.json")" "^0.44.2"
+assert_eq "$(jq -r '.dependencies["class-validator"]' "$target/apps/api/package.json")" "^0.14.2"
 [[ ! -d "$target/apps/api/prisma" ]] && no_prisma=yes || no_prisma=no
 assert_eq "$no_prisma" "yes"
 [[ -f "$target/.env.local" && -f "$target/.env.example" ]] && env_exists=yes || env_exists=no
 assert_eq "$env_exists" "yes"
+[[ -f "$target/compose.yaml" ]] && compose_exists=yes || compose_exists=no
+assert_eq "$compose_exists" "yes"
+assert_contains "$(cat "$target/compose.yaml")" "postgres:17-alpine"
+assert_contains "$(cat "$target/compose.yaml")" "corepack pnpm@10.12.1 --filter @app/web exec next dev"
+assert_contains "$(cat "$target/compose.yaml")" "corepack pnpm@10.12.1 --filter @app/api dev"
+assert_contains "$(cat "$target/compose.yaml")" "DATABASE_URL: postgresql://postgres:postgres@postgres:5432/demo"
+assert_eq "$(jq -r '.scripts["dev:docker"]' "$target/package.json")" "docker compose up --build"
+assert_eq "$(jq -r '.engines.node' "$target/package.json")" ">=22.13"
+assert_eq "$(cat "$target/.nvmrc")" "24"
 assert_eq "$(jq -r '.projects[0].name' "$BOS_CONFIG_HOME/projects.json")" "demo"
 
 mkdir -p "$TEST_TMP/workspace"
@@ -69,6 +86,16 @@ none_target="$TEST_TMP/no-db-project"
 assert_eq "$(jq -r .orm "$none_target/.bos/project.json")" "none"
 [[ ! -d "$none_target/apps/api/prisma" && ! -f "$none_target/apps/api/drizzle.config.ts" ]] && no_orm_files=yes || no_orm_files=no
 assert_eq "$no_orm_files" "yes"
+[[ -f "$none_target/compose.yaml" ]] && no_compose=yes || no_compose=no
+assert_eq "$no_compose" "yes"
+assert_contains "$(cat "$none_target/compose.yaml")" "corepack pnpm@10.12.1 --filter @app/web exec next dev"
+
+mongo_template="$BOS_CONFIG_HOME/templates/mongo.json"
+print -r -- '{"name":"mongo","extends":"web","defaults":{"database":"mongodb"}}' > "$mongo_template"
+mongo_target="$TEST_TMP/mongo-project"
+"$BOS_ROOT/bin/bos" init mongo-demo --template mongo --path "$mongo_target" --yes >/dev/null
+assert_eq "$(jq -r .database "$mongo_target/.bos/project.json")" "mongodb"
+assert_contains "$(cat "$mongo_target/compose.yaml")" "mongo:7"
 
 partial_target="$TEST_TMP/partial-project"
 mkdir -p "$partial_target/.bos"
@@ -104,5 +131,31 @@ assert_eq "$(jq '[.projects[] | select(.name=="existing-project")] | length' "$B
 output="$("$BOS_ROOT/bin/bos" project register "$TEST_TMP/existing-project" --name legacy --type api)"
 assert_contains "$output" "Type: api"
 assert_eq "$(jq -r '.projects[] | select(.name=="legacy") | .type' "$BOS_CONFIG_HOME/projects.json")" "api"
+
+> "$TEST_TMP/docker-calls"
+"$BOS_ROOT/bin/bos" dev demo status >/dev/null
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose ps"
+
+> "$TEST_TMP/docker-calls"
+output="$("$BOS_ROOT/bin/bos" dev demo)"
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose up --build --detach --wait --quiet-pull"
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose ps"
+assert_contains "$output" "App ready:"
+assert_contains "$output" "Web:        http://localhost:3000"
+assert_contains "$output" "API health: http://localhost:3001/health"
+assert_contains "$output" "PostgreSQL: postgresql://postgres:postgres@localhost:5432/demo"
+
+> "$TEST_TMP/docker-calls"
+"$BOS_ROOT/bin/bos" dev demo --verbose >/dev/null
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose up --build"
+
+> "$TEST_TMP/docker-calls"
+"$BOS_ROOT/bin/bos" dev "$target" stop >/dev/null
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose down"
+
+> "$TEST_TMP/docker-calls"
+"$BOS_ROOT/bin/bos" dev "$target" reset >/dev/null
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose down -v"
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose up --build"
 
 finish_tests

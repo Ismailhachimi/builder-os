@@ -19,8 +19,9 @@ git pull
 
 The installer is idempotent. It preserves files in `~/.config/bos/` and
 refreshes the global command symlink. On macOS it also synchronizes the pinned
-MLX service environment from `requirements.txt`; Linux uses the workstation's
-validated vLLM environment.
+MLX service environment from `requirements.txt`; DGX Spark uses Ollama; generic
+Linux uses the workstation's validated vLLM environment. The installer also
+checks Docker Compose for generated app infrastructure.
 
 ## State And Ownership
 
@@ -35,6 +36,7 @@ validated vLLM environment.
 | OpenCode configuration | `opencode.json` |
 | Model profiles | `config/models.json` |
 | Template profiles | `config/templates/` and `~/.config/bos/templates/` |
+| Generated app infrastructure | per-project `compose.yaml` |
 
 BOS loads a repository-root `.env` file when present. Use it for local machine
 secrets such as `HF_TOKEN`; copy `.env.example` to `.env` and keep real values
@@ -138,6 +140,8 @@ bos init product-name
 bos init product-name --path ~/Projects/product-name
 bos init product-name --orm prisma --yes
 bos project register ~/Projects/existing-product
+bos dev product-name
+bos dev product-name stop
 bos projects
 bos open product-name
 bos sessions --project product-name
@@ -161,6 +165,19 @@ Scripts and agents should use an explicit session ID, `--latest`, or
 The web template defaults to PostgreSQL with Drizzle ORM. Interactive creation
 offers Prisma after selecting PostgreSQL; scripted creation can use
 `--orm prisma`.
+
+Generated projects include Docker Compose app runtime:
+
+```sh
+bos dev              # Start web, API, and local services
+bos dev stop         # Stop everything
+bos dev reset        # Delete service volumes and restart
+bos dev --verbose    # Start attached with full Docker output
+```
+
+Use `bos dev reset` when you want a clean local database. It removes only that
+project's Compose volumes. Host `pnpm dev` is still available when the host
+Node.js and pnpm versions match the generated template.
 
 The built-in web profile is versioned in `config/templates/web.json`. Custom
 profiles can extend the web generator:

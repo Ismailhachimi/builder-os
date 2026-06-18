@@ -172,6 +172,23 @@ install_bos_command() {
   fi
 }
 
+cleanup_managed_node_wrappers() {
+  local node_root="${XDG_DATA_HOME:-$HOME/.local/share}/builder-os/node/current"
+  local wrapper command_name
+
+  for command_name in node npm npx corepack; do
+    wrapper="$BIN_DIR/$command_name"
+    if [[ -L "$wrapper" && "$(readlink "$wrapper")" == "$node_root/bin/$command_name" ]]; then
+      rm -f "$wrapper"
+    fi
+  done
+
+  wrapper="$BIN_DIR/pnpm"
+  if [[ -f "$wrapper" ]] && grep -Fq 'builder-os/node/current' "$wrapper" 2>/dev/null; then
+    rm -f "$wrapper"
+  fi
+}
+
 install_linux_packages() {
   local missing=()
   has git || missing+=(git)
@@ -210,6 +227,77 @@ PY
   else
     die "Install these commands with your package manager, then rerun: ${missing[*]} column"
   fi
+}
+
+install_linux_docker() {
+  local compose_package="docker-compose-plugin"
+  local docker_socket="/var/run/docker.sock"
+  if ! has docker; then
+    if has apt-get; then
+      info "Installing Docker..."
+      if ! apt-cache show "$compose_package" >/dev/null 2>&1 && apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+        compose_package="docker-compose-v2"
+      fi
+      sudo apt-get update
+      sudo apt-get install -y docker.io "$compose_package"
+    elif has dnf; then
+      info "Installing Docker..."
+      sudo dnf install -y docker docker-compose-plugin
+    else
+      die "Docker is missing. Install Docker and the Compose plugin with your package manager, then rerun ./install.sh."
+    fi
+  fi
+
+  has docker || die "Docker installation completed, but docker is still unavailable."
+
+  if ! docker compose version >/dev/null 2>&1; then
+    if has apt-get; then
+      if ! apt-cache show "$compose_package" >/dev/null 2>&1 && apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+        compose_package="docker-compose-v2"
+      fi
+      info "Installing Docker Compose..."
+      sudo apt-get update
+      sudo apt-get install -y "$compose_package"
+    elif has dnf; then
+      info "Installing Docker Compose..."
+      sudo dnf install -y docker-compose-plugin
+    fi
+  fi
+
+  if has systemctl; then
+    sudo systemctl enable --now docker >/dev/null 2>&1 || true
+  fi
+
+  if ! docker compose version >/dev/null 2>&1; then
+    die "Docker Compose plugin is missing. Install docker-compose-plugin, then rerun ./install.sh."
+  fi
+
+  if ! groups "$USER" 2>/dev/null | grep -qw docker; then
+    if getent group docker >/dev/null 2>&1; then
+      info "Adding $USER to the docker group..."
+      sudo usermod -aG docker "$USER" || true
+    fi
+  fi
+
+  if ! docker ps >/dev/null 2>&1 && [[ -S "$docker_socket" ]]; then
+    if ! has setfacl; then
+      if has apt-get; then
+        info "Installing ACL tools for same-terminal Docker access..."
+        sudo apt-get update
+        sudo apt-get install -y acl
+      elif has dnf; then
+        info "Installing ACL tools for same-terminal Docker access..."
+        sudo dnf install -y acl
+      fi
+    fi
+    if has setfacl; then
+      info "Enabling Docker access in this terminal..."
+      sudo setfacl -m "u:$(id -u):rw" "$docker_socket" || true
+    fi
+  fi
+
+  docker ps >/dev/null 2>&1 ||
+    die "Docker is installed, but this terminal cannot access it yet. Open a new terminal and rerun ./install.sh."
 }
 
 install_linux_vllm() {
@@ -273,6 +361,14 @@ install_macos_packages() {
   has brew || die "Homebrew installation was not found."
   has python3.11 || { info "Installing Python 3.11..."; brew install python@3.11; }
   has jq || { info "Installing jq..."; brew install jq; }
+  if ! has docker; then
+    info "Installing Docker Desktop..."
+    brew install --cask docker
+    info "Open Docker Desktop once to finish Docker setup."
+  elif ! docker compose version >/dev/null 2>&1; then
+    info "Installing Docker Compose..."
+    brew install docker-compose
+  fi
   if [[ ! -x "$HOME/.opencode/bin/opencode" ]] && ! has opencode; then
     info "Installing OpenCode..."
     brew install anomalyco/tap/opencode
@@ -352,6 +448,7 @@ case "$PLATFORM" in
   darwin) install_macos_packages ;;
   linux)
     install_linux_packages
+    install_linux_docker
     install_linux_opencode
     has systemctl || die "systemd is required for the Linux model service."
     if [[ "$MODEL_PLATFORM" == "linux-spark" ]]; then
@@ -370,6 +467,7 @@ fi
 
 mkdir -p "$HOME/.config/bos" "$DATA_DIR"
 install_bos_command
+cleanup_managed_node_wrappers
 setup_local_env
 if [[ "$PLATFORM" == "linux" && -n "${BOS_VLLM_BIN:-}" ]]; then
   CONFIG="$HOME/.config/bos/config.json"

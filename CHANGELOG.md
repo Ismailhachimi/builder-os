@@ -2,6 +2,24 @@
 
 All notable Builder OS changes will be documented here.
 
+## 0.2.0 - 2026-06-18
+
+- Added Docker and Docker Compose setup to the installer for local app
+  infrastructure.
+- Generated Docker Compose services for the web app, API, and PostgreSQL or
+  MongoDB-backed local services.
+- Added `bos dev` commands to start, stop, reset, inspect, and tail generated
+  app containers from the project registry.
+- Made `bos dev` quiet by default with `--verbose` for attached Docker output.
+- Added `dev:docker` scripts to generated projects while keeping host `pnpm dev`
+  available for matching Node.js environments.
+- Documented the disposable local database workflow.
+
+## 0.1.3 - 2026-06-18
+
+- Fixed installer handling for skipped optional Hugging Face tokens.
+- Allowed `.env` creation with an empty `HF_TOKEN` without failing setup.
+
 ## 0.1.2 - 2026-06-17
 
 - Added DGX Spark detection with Ollama as the default Spark runtime.

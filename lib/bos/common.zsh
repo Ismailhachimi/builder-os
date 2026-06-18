@@ -302,6 +302,7 @@ Lifecycle:
 
 Projects:
   init NAME [--template web] [--path DIR] [--orm drizzle|prisma] [--yes]
+  dev [PROJECT|PATH|.] [start|stop|reset|status|logs] [--verbose]
   open NAME|PATH|. [-- OPENCODE_ARGS...]
   projects
   project register [PATH|.] [--name NAME] [--type TYPE]
@@ -340,6 +341,11 @@ bos_doctor() {
       failed=1
     fi
   done
+  if bos_has docker && docker compose version >/dev/null 2>&1; then
+    echo "ok    Docker Compose"
+  else
+    echo "info  Docker Compose unavailable for local app infrastructure"
+  fi
   local selected runtime runtime_bin
   selected="$(bos_selected_model)"
   runtime="$(bos_profile_value "$selected" runtime)"

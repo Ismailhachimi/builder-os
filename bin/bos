@@ -22,7 +22,7 @@ case "$command_name" in
     source "$BOS_ROOT/lib/bos/models.zsh"
     bos_model "$@"
     ;;
-  projects|open|init)
+  projects|open|init|dev)
     source "$BOS_ROOT/lib/bos/projects.zsh"
     "bos_$command_name" "$@"
     ;;
@@ -39,7 +39,7 @@ case "$command_name" in
     bos_eval "$@"
     ;;
   doctor) bos_doctor ;;
-  version|--version|-v) echo "bos 0.1.2" ;;
+  version|--version|-v) echo "bos 0.2.0" ;;
   *)
     bos_error "Unknown command: $command_name"
     bos_help

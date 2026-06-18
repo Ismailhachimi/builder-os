@@ -19,6 +19,7 @@ bos -> OpenCode coding agent -> local model runtime
 - Keep changes small, explicit, and local-first.
 - Prefer existing Zsh helpers in `lib/bos/` over new abstractions.
 - Preserve macOS, DGX Spark, and generic Linux behavior separately.
+- Keep generated web apps ready for local Docker Compose infrastructure.
 - Do not commit secrets, model weights, generated dependencies, or local state.
 - Add focused tests for behavior changes.
 
@@ -40,6 +41,7 @@ git diff --check
   hide large downloads.
 - Optional local secrets and machine overrides live in `.env`; keep real values
   out of git.
+- Database-backed generated apps use per-project `compose.yaml` files.
 
 ## Release Rule
 
@@ -49,5 +51,5 @@ When asked to prepare a tag or release, update the shipped version first:
 - README release badge
 - `CHANGELOG.md`
 
-Tags must match the CLI version exactly, for example `v0.1.2` for `bos 0.1.2`.
+Tags must match the CLI version exactly, for example `vX.Y.Z` for `bos X.Y.Z`.
 Do not suggest or create a tag until those files are in sync.

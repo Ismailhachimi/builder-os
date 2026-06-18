@@ -1,7 +1,7 @@
 # Builder OS
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release: v0.1.2](https://img.shields.io/badge/release-v0.1.2-4c8bf5.svg)](CHANGELOG.md)
+[![Release: v0.2.0](https://img.shields.io/badge/release-v0.2.0-4c8bf5.svg)](CHANGELOG.md)
 
 Builder OS (`bos`) gives macOS and Linux workstations one command for local
 agentic development:
@@ -41,6 +41,7 @@ cd builder-os
 The installer automatically installs or configures:
 
 - Homebrew/Python 3.11/`jq` on macOS, or basic system packages on Linux.
+- Docker and Docker Compose for generated app infrastructure.
 - OpenCode.
 - The global `bos` command.
 - The isolated MLX-LM environment on macOS.
@@ -141,6 +142,8 @@ bos session resume --project my-app
 bos projects                 # List registered projects
 bos project register .       # Register an existing project
 bos init my-app              # Create a new project interactively
+bos dev my-app               # Run a generated app through Docker Compose
+bos dev my-app stop          # Stop its local containers
 
 bos models                   # Show available and active models
 bos model select default     # Select the model used by the next start
@@ -165,8 +168,18 @@ stack:
 - NestJS with validation, security defaults, and JWT skeleton.
 - Shared Zod contracts.
 - PostgreSQL and Drizzle ORM by default, with Prisma available as an alternative.
+- Docker Compose runtime for the web app, API, and local database.
 
-Node.js and pnpm are installed automatically the first time they are needed.
+Node.js and pnpm are installed automatically for BOS scaffolding when they are
+needed. Generated projects include `compose.yaml`, so the full app can run with
+the Node version pinned inside Docker:
+
+```sh
+bos dev              # Start web, API, and database
+bos dev stop         # Stop everything
+bos dev reset        # Delete volumes and restart
+bos dev --verbose    # Start attached with full Docker output
+```
 
 Accept every default without questions:
 

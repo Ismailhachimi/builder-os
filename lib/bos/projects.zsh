@@ -186,10 +186,12 @@ bos_init_recoverable_project() {
 
 bos_scaffold_web() {
   local project_dir="$1" name="$2" description="$3" visual="$4" database="$5" database_url="$6" orm="$7" auth="$8" infrastructure="$9"
-  local example_database_url="$database_url" data_stack="$database"
+  local example_database_url="$database_url" data_stack="$database" database_name="${name//-/_}" compose_database_url="$database_url"
   [[ "$orm" != "none" ]] && data_stack="$database with $orm"
-  [[ "$database" == "postgresql" ]] && example_database_url="postgresql://postgres:postgres@localhost:5432/app"
-  [[ "$database" == "mongodb" ]] && example_database_url="mongodb://localhost:27017/app"
+  [[ "$database" == "postgresql" ]] && example_database_url="postgresql://postgres:postgres@localhost:5432/$database_name"
+  [[ "$database" == "mongodb" ]] && example_database_url="mongodb://localhost:27017/$database_name"
+  [[ "$database" == "postgresql" ]] && compose_database_url="postgresql://postgres:postgres@postgres:5432/$database_name"
+  [[ "$database" == "mongodb" ]] && compose_database_url="mongodb://mongo:27017/$database_name"
   mkdir -p "$project_dir/apps/web/app" "$project_dir/apps/api/src/auth" "$project_dir/packages/contracts/src" "$project_dir/docs" "$project_dir/.bos"
 
   cat > "$project_dir/package.json" <<EOF
@@ -197,8 +199,17 @@ bos_scaffold_web() {
   "name": "$name",
   "private": true,
   "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "turbo dev",
+    "dev:docker": "docker compose up --build",
+    "dev:docker:down": "docker compose down",
+    "dev:docker:reset": "docker compose down -v && docker compose up --build",
+    "dev:infra": "docker compose up --build",
+    "dev:infra:down": "docker compose down",
+    "dev:infra:reset": "docker compose down -v && docker compose up --build",
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test"
@@ -209,6 +220,8 @@ bos_scaffold_web() {
   }
 }
 EOF
+  print -r -- "24" > "$project_dir/.nvmrc"
+  print -r -- "24" > "$project_dir/.node-version"
   cat > "$project_dir/pnpm-workspace.yaml" <<'EOF'
 packages:
   - "apps/*"
@@ -234,6 +247,8 @@ dist/
 .env.*
 !.env.example
 .buildstamp
+.pnpm-store/
+.pnpm-install.lock
 .DS_Store
 EOF
   cat > "$project_dir/.env.example" <<EOF
@@ -246,6 +261,93 @@ DATABASE_URL=$database_url
 JWT_SECRET=local-development-only
 NEXT_PUBLIC_API_URL=http://localhost:3001
 EOF
+  cat > "$project_dir/compose.yaml" <<EOF
+services:
+  web:
+    image: node:24-bookworm-slim
+    working_dir: /workspace
+    user: "\${UID:-1000}:\${GID:-1000}"
+    command: >
+      sh -lc "corepack pnpm@10.12.1 config set store-dir /workspace/.pnpm-store &&
+      CI=true flock /workspace/.pnpm-install.lock corepack pnpm@10.12.1 install --no-frozen-lockfile &&
+      corepack pnpm@10.12.1 --filter @app/web exec next dev --hostname 0.0.0.0"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/workspace
+    depends_on:
+      - api
+
+  api:
+    image: node:24-bookworm-slim
+    working_dir: /workspace
+    user: "\${UID:-1000}:\${GID:-1000}"
+    command: >
+      sh -lc "corepack pnpm@10.12.1 config set store-dir /workspace/.pnpm-store &&
+      CI=true flock /workspace/.pnpm-install.lock corepack pnpm@10.12.1 install --no-frozen-lockfile &&
+      corepack pnpm@10.12.1 --filter @app/api dev"
+    environment:
+      JWT_SECRET: local-development-only
+      DATABASE_URL: $compose_database_url
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/workspace
+EOF
+  if [[ "$database" == "postgresql" ]]; then
+    cat >> "$project_dir/compose.yaml" <<EOF
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: $database_name
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $database_name"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+EOF
+  elif [[ "$database" == "mongodb" ]]; then
+    cat >> "$project_dir/compose.yaml" <<'EOF'
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mongo-data:
+EOF
+  else
+    cat >> "$project_dir/compose.yaml" <<'EOF'
+EOF
+  fi
   cat > "$project_dir/README.md" <<EOF
 # $name
 
@@ -256,6 +358,28 @@ $description
 Turbo, pnpm, Next.js, NestJS, shared Zod contracts, $data_stack, and $auth auth.
 
 ## Development
+
+\`\`\`sh
+bos dev
+\`\`\`
+
+This starts the web app, API, and local services with the Node version pinned by
+the template. Open:
+
+- Web: http://localhost:3000
+- API health: http://localhost:3001/health
+
+Stop or reset everything:
+
+\`\`\`sh
+bos dev stop
+bos dev reset
+\`\`\`
+
+Under the hood, BOS runs Docker Compose from this project directory. Raw
+\`docker compose ...\` commands work too.
+
+Host development is also available when Node.js and pnpm match the template:
 
 \`\`\`sh
 pnpm dev
@@ -280,6 +404,7 @@ $visual
 - API: NestJS with global validation, security headers, health endpoint, and JWT skeleton.
 - Contracts: shared Zod schemas and inferred TypeScript types.
 - Data: $data_stack.
+- Local development: Docker Compose runs the web app, API, and local services.
 - Future infrastructure target: $infrastructure.
 EOF
   cat > "$project_dir/AGENTS.md" <<'EOF'
@@ -383,6 +508,8 @@ EOF
     "@nestjs/core": "^11.1.2",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/platform-express": "^11.1.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
     "helmet": "^8.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
@@ -581,4 +708,106 @@ bos_open() {
   bos_project_env
   cd "$project_dir"
   exec "$BOS_OPENCODE_BIN" --pure --model "$model" "$@" .
+}
+
+bos_dev_ready_summary() {
+  local project_dir="$1"
+  local services
+  services="$(cd "$project_dir" && docker compose config --services 2>/dev/null || true)"
+
+  print
+  print -r -- "App ready:"
+  if print -r -- "$services" | grep -qx web; then
+    print -r -- "  Web:        http://localhost:3000"
+  fi
+  if print -r -- "$services" | grep -qx api; then
+    print -r -- "  API:        http://localhost:3001"
+    print -r -- "  API health: http://localhost:3001/health"
+  fi
+  if print -r -- "$services" | grep -qx postgres; then
+    print -r -- "  PostgreSQL: postgresql://postgres:postgres@localhost:5432/$(jq -r '.name // empty' "$project_dir/.bos/project.json" 2>/dev/null | tr '-' '_' || true)"
+  fi
+  if print -r -- "$services" | grep -qx mongo; then
+    print -r -- "  MongoDB:    mongodb://localhost:27017/$(jq -r '.name // empty' "$project_dir/.bos/project.json" 2>/dev/null | tr '-' '_' || true)"
+  fi
+  print
+  print -r -- "Useful:"
+  print -r -- "  bos dev \"$project_dir\" logs"
+  print -r -- "  bos dev \"$project_dir\" stop"
+  print -r -- "  bos dev \"$project_dir\" reset"
+}
+
+bos_dev() {
+  bos_ensure_dirs
+  local target="." action="start" verbose=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --verbose|-v)
+        verbose=1
+        shift
+        ;;
+      start|up|stop|down|reset|restart|status|ps|logs)
+        action="$1"
+        shift
+        ;;
+      *)
+        [[ "$target" == "." ]] || { bos_die "Usage: bos dev [PROJECT|PATH|.] [start|stop|reset|status|logs] [--verbose]"; return 1; }
+        target="$1"
+        shift
+        if [[ $# -gt 0 ]]; then
+          case "$1" in
+            --verbose|-v) ;;
+            start|up|stop|down|reset|restart|status|ps|logs) action="$1"; shift ;;
+            *) bos_die "Usage: bos dev [PROJECT|PATH|.] [start|stop|reset|status|logs] [--verbose]"; return 1 ;;
+          esac
+        fi
+        ;;
+    esac
+  done
+
+  [[ $# -eq 0 ]] || { bos_die "Usage: bos dev [PROJECT|PATH|.] [start|stop|reset|status|logs] [--verbose]"; return 1; }
+
+  local project_dir
+  project_dir="$(bos_resolve_project "$target")" || { bos_die "Project not found: $target"; return 1; }
+  [[ -f "$project_dir/compose.yaml" || -f "$project_dir/docker-compose.yml" || -f "$project_dir/docker-compose.yaml" ]] ||
+    { bos_die "No Docker Compose file found in: $project_dir"; return 1; }
+  bos_has docker || { bos_die "Docker is missing. Rerun ./install.sh from Builder OS."; return 1; }
+  docker compose version >/dev/null 2>&1 ||
+    { bos_die "Docker Compose is missing. Rerun ./install.sh from Builder OS."; return 1; }
+
+  case "$action" in
+    start|up)
+      bos_info "Starting local app: $project_dir"
+      if (( verbose )); then
+        (cd "$project_dir" && docker compose up --build)
+      else
+        (cd "$project_dir" && docker compose up --build --detach --wait --quiet-pull && docker compose ps)
+        bos_dev_ready_summary "$project_dir"
+      fi
+      ;;
+    stop|down)
+      bos_info "Stopping local app: $project_dir"
+      (cd "$project_dir" && docker compose down)
+      ;;
+    reset|restart)
+      bos_info "Resetting local app: $project_dir"
+      if (( verbose )); then
+        (cd "$project_dir" && docker compose down -v && docker compose up --build)
+      else
+        (cd "$project_dir" && docker compose down -v && docker compose up --build --detach --wait --quiet-pull && docker compose ps)
+        bos_dev_ready_summary "$project_dir"
+      fi
+      ;;
+    status|ps)
+      (cd "$project_dir" && docker compose ps)
+      ;;
+    logs)
+      (cd "$project_dir" && docker compose logs -f)
+      ;;
+    *)
+      bos_die "Usage: bos dev [PROJECT|PATH|.] [start|stop|reset|status|logs] [--verbose]"
+      return 1
+      ;;
+  esac
 }

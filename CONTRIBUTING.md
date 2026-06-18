@@ -35,8 +35,8 @@ system commands where possible.
 
 - Before creating a git tag, update the repo version in `bin/bos`, the README
   release badge, and `CHANGELOG.md`.
-- Git tags should match the shipped CLI version exactly, for example `v0.1.2`
-  for `bos 0.1.2`.
+- Git tags should match the shipped CLI version exactly, for example `vX.Y.Z`
+  for `bos X.Y.Z`.
 
 ## Reporting Problems
 
