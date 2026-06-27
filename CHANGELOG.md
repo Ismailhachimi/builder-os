@@ -2,6 +2,18 @@
 
 All notable Builder OS changes will be documented here.
 
+## 0.2.2 - 2026-06-27
+
+- Fixed macOS Docker Desktop detection by adding Docker Desktop's bundled CLI to
+  the BOS runtime path.
+- Linked Docker Desktop's bundled Compose plugin when `docker compose` is not
+  discoverable from the terminal.
+- Made `bos dev` offer to open Docker Desktop and wait for the daemon when it is
+  installed but not running.
+- Fixed generated Docker Compose apps by installing pnpm dependencies once in a
+  dedicated setup service with Docker-managed dependency volumes, avoiding
+  host/container `node_modules` conflicts and concurrent install races.
+
 ## 0.2.1 - 2026-06-27
 
 - Added `bos project reset` to safely back up and recreate registered projects

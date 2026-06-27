@@ -357,13 +357,29 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 EOF
   cat > "$project_dir/compose.yaml" <<EOF
 services:
+  setup:
+    image: node:24-bookworm-slim
+    working_dir: /workspace
+    command: >
+      sh -lc "mkdir -p /pnpm/store /workspace/node_modules /workspace/apps/web/node_modules /workspace/apps/api/node_modules /workspace/packages/contracts/node_modules &&
+      chown -R \${UID:-1000}:\${GID:-1000} /pnpm /workspace/node_modules /workspace/apps/web/node_modules /workspace/apps/api/node_modules /workspace/packages/contracts/node_modules &&
+      corepack pnpm@10.12.1 config set store-dir /pnpm/store &&
+      corepack pnpm@10.12.1 install --no-frozen-lockfile &&
+      chown -R \${UID:-1000}:\${GID:-1000} /pnpm /workspace/node_modules /workspace/apps/web/node_modules /workspace/apps/api/node_modules /workspace/packages/contracts/node_modules"
+    volumes:
+      - .:/workspace
+      - pnpm-store:/pnpm/store
+      - node-modules:/workspace/node_modules
+      - web-node-modules:/workspace/apps/web/node_modules
+      - api-node-modules:/workspace/apps/api/node_modules
+      - contracts-node-modules:/workspace/packages/contracts/node_modules
+
   web:
     image: node:24-bookworm-slim
     working_dir: /workspace
     user: "\${UID:-1000}:\${GID:-1000}"
     command: >
-      sh -lc "corepack pnpm@10.12.1 config set store-dir /workspace/.pnpm-store &&
-      CI=true flock /workspace/.pnpm-install.lock corepack pnpm@10.12.1 install --no-frozen-lockfile &&
+      sh -lc "corepack pnpm@10.12.1 config set store-dir /pnpm/store &&
       corepack pnpm@10.12.1 --filter @app/web exec next dev --hostname 0.0.0.0"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001
@@ -371,16 +387,23 @@ services:
       - "3000:3000"
     volumes:
       - .:/workspace
+      - pnpm-store:/pnpm/store
+      - node-modules:/workspace/node_modules
+      - web-node-modules:/workspace/apps/web/node_modules
+      - api-node-modules:/workspace/apps/api/node_modules
+      - contracts-node-modules:/workspace/packages/contracts/node_modules
     depends_on:
-      - api
+      setup:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
 
   api:
     image: node:24-bookworm-slim
     working_dir: /workspace
     user: "\${UID:-1000}:\${GID:-1000}"
     command: >
-      sh -lc "corepack pnpm@10.12.1 config set store-dir /workspace/.pnpm-store &&
-      CI=true flock /workspace/.pnpm-install.lock corepack pnpm@10.12.1 install --no-frozen-lockfile &&
+      sh -lc "corepack pnpm@10.12.1 config set store-dir /pnpm/store &&
       corepack pnpm@10.12.1 --filter @app/api dev"
     environment:
       JWT_SECRET: local-development-only
@@ -389,10 +412,17 @@ services:
       - "3001:3001"
     volumes:
       - .:/workspace
+      - pnpm-store:/pnpm/store
+      - node-modules:/workspace/node_modules
+      - web-node-modules:/workspace/apps/web/node_modules
+      - api-node-modules:/workspace/apps/api/node_modules
+      - contracts-node-modules:/workspace/packages/contracts/node_modules
 EOF
   if [[ "$database" == "postgresql" ]]; then
     cat >> "$project_dir/compose.yaml" <<EOF
     depends_on:
+      setup:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
 
@@ -414,11 +444,18 @@ EOF
       retries: 10
 
 volumes:
+  pnpm-store:
+  node-modules:
+  web-node-modules:
+  api-node-modules:
+  contracts-node-modules:
   postgres-data:
 EOF
   elif [[ "$database" == "mongodb" ]]; then
     cat >> "$project_dir/compose.yaml" <<'EOF'
     depends_on:
+      setup:
+        condition: service_completed_successfully
       mongo:
         condition: service_healthy
 
@@ -436,10 +473,25 @@ EOF
       retries: 10
 
 volumes:
+  pnpm-store:
+  node-modules:
+  web-node-modules:
+  api-node-modules:
+  contracts-node-modules:
   mongo-data:
 EOF
   else
     cat >> "$project_dir/compose.yaml" <<'EOF'
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+volumes:
+  pnpm-store:
+  node-modules:
+  web-node-modules:
+  api-node-modules:
+  contracts-node-modules:
 EOF
   fi
   cat > "$project_dir/README.md" <<EOF
@@ -806,8 +858,14 @@ bos_open() {
 
 bos_dev_ready_summary() {
   local project_dir="$1"
-  local services
+  local services project_ref project_display
   services="$(cd "$project_dir" && docker compose config --services 2>/dev/null || true)"
+  project_ref="$(jq -r --arg path "$project_dir" '.projects[] | select(.path==$path) | .name' "$BOS_PROJECTS" 2>/dev/null | head -1)"
+  if [[ -n "$project_ref" ]]; then
+    project_display="$project_ref"
+  else
+    project_display="\"$project_dir\""
+  fi
 
   print
   print -r -- "App ready:"
@@ -826,9 +884,66 @@ bos_dev_ready_summary() {
   fi
   print
   print -r -- "Useful:"
-  print -r -- "  bos dev \"$project_dir\" logs"
-  print -r -- "  bos dev \"$project_dir\" stop"
-  print -r -- "  bos dev \"$project_dir\" reset"
+  print -r -- "  bos dev $project_display logs"
+  print -r -- "  bos dev $project_display stop"
+  print -r -- "  bos dev $project_display reset"
+}
+
+bos_docker_ready() {
+  docker info >/dev/null 2>&1
+}
+
+bos_wait_for_docker() {
+  local attempts="${1:-60}" delay="${2:-2}" i
+  for i in {1..$attempts}; do
+    bos_docker_ready && return 0
+    sleep "$delay"
+  done
+  return 1
+}
+
+bos_ensure_docker_runtime() {
+  if ! bos_has docker; then
+    if [[ "$BOS_PLATFORM" == "darwin" && -d /Applications/Docker.app ]]; then
+      bos_die "Docker Desktop is installed, but the docker CLI is not available. Rerun ./install.sh from builder-os, then reopen your terminal."
+    else
+      bos_die "Docker is missing. Rerun ./install.sh from builder-os."
+    fi
+    return 1
+  fi
+
+  if [[ "$BOS_PLATFORM" == "darwin" && -x /Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose ]] &&
+    ! docker compose version >/dev/null 2>&1; then
+    mkdir -p "$HOME/.docker/cli-plugins"
+    ln -sfn /Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose "$HOME/.docker/cli-plugins/docker-compose"
+  fi
+
+  docker compose version >/dev/null 2>&1 || {
+    bos_die "Docker Compose is missing. Rerun ./install.sh from builder-os."
+    return 1
+  }
+
+  if bos_docker_ready; then
+    return 0
+  fi
+
+  if [[ "$BOS_PLATFORM" == "darwin" && -d /Applications/Docker.app ]]; then
+    print -r -- "Docker Desktop is installed but not running."
+    print -n -r -- "Open Docker Desktop and wait until it is ready? [Y/n]: "
+    local answer
+    read -r answer
+    [[ "${answer:l}" != "n" ]] || { bos_die "Docker Desktop is not running."; return 1; }
+    open -a Docker >/dev/null 2>&1 || { bos_die "Could not open Docker Desktop."; return 1; }
+    bos_info "Waiting for Docker Desktop..."
+    bos_wait_for_docker 90 2 || {
+      bos_die "Docker Desktop did not become ready. Open Docker Desktop, finish its setup, then rerun bos dev."
+      return 1
+    }
+    return 0
+  fi
+
+  bos_die "Docker daemon is not reachable. Start Docker, then rerun bos dev."
+  return 1
 }
 
 bos_dev() {
@@ -866,9 +981,7 @@ bos_dev() {
   project_dir="$(bos_resolve_project "$target")" || { bos_die "Project not found: $target"; return 1; }
   [[ -f "$project_dir/compose.yaml" || -f "$project_dir/docker-compose.yml" || -f "$project_dir/docker-compose.yaml" ]] ||
     { bos_die "No Docker Compose file found in: $project_dir"; return 1; }
-  bos_has docker || { bos_die "Docker is missing. Rerun ./install.sh from Builder OS."; return 1; }
-  docker compose version >/dev/null 2>&1 ||
-    { bos_die "Docker Compose is missing. Rerun ./install.sh from Builder OS."; return 1; }
+  bos_ensure_docker_runtime || return 1
 
   case "$action" in
     start|up)

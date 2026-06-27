@@ -366,8 +366,14 @@ install_macos_packages() {
     brew install --cask docker
     info "Open Docker Desktop once to finish Docker setup."
   elif ! docker compose version >/dev/null 2>&1; then
-    info "Installing Docker Compose..."
-    brew install docker-compose
+    if [[ -x /Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose ]]; then
+      info "Linking Docker Desktop Compose plugin..."
+      mkdir -p "$HOME/.docker/cli-plugins"
+      ln -sfn /Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose "$HOME/.docker/cli-plugins/docker-compose"
+    else
+      info "Installing Docker Compose..."
+      brew install docker-compose
+    fi
   fi
   if [[ ! -x "$HOME/.opencode/bin/opencode" ]] && ! has opencode; then
     info "Installing OpenCode..."

@@ -23,6 +23,7 @@ cat > "$TEST_TMP/bin/docker" <<EOF
 print -r -- "\$PWD :: \$*" >> "$TEST_TMP/docker-calls"
 [[ "\$*" == "compose version" ]] && exit 0
 [[ "\$*" == "compose config --services" ]] && { print web; print api; print postgres; exit 0; }
+[[ "\$*" == "info" ]] && exit 0
 exit 0
 EOF
 chmod +x "$TEST_TMP/bin/"*
@@ -48,6 +49,10 @@ assert_eq "$env_exists" "yes"
 [[ -f "$target/compose.yaml" ]] && compose_exists=yes || compose_exists=no
 assert_eq "$compose_exists" "yes"
 assert_contains "$(cat "$target/compose.yaml")" "postgres:17-alpine"
+assert_contains "$(cat "$target/compose.yaml")" "setup:"
+assert_contains "$(cat "$target/compose.yaml")" "corepack pnpm@10.12.1 install --no-frozen-lockfile"
+assert_contains "$(cat "$target/compose.yaml")" "pnpm-store:/pnpm/store"
+assert_contains "$(cat "$target/compose.yaml")" "node-modules:/workspace/node_modules"
 assert_contains "$(cat "$target/compose.yaml")" "corepack pnpm@10.12.1 --filter @app/web exec next dev"
 assert_contains "$(cat "$target/compose.yaml")" "corepack pnpm@10.12.1 --filter @app/api dev"
 assert_contains "$(cat "$target/compose.yaml")" "DATABASE_URL: postgresql://postgres:postgres@postgres:5432/demo"

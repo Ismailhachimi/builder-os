@@ -1,7 +1,7 @@
 # Builder OS
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release: v0.2.1](https://img.shields.io/badge/release-v0.2.1-4c8bf5.svg)](CHANGELOG.md)
+[![Release: v0.2.2](https://img.shields.io/badge/release-v0.2.2-4c8bf5.svg)](CHANGELOG.md)
 
 Builder OS (`bos`) gives macOS and Linux workstations one command for local
 agentic development:

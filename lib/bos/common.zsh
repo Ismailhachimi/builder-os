@@ -4,7 +4,10 @@ set -euo pipefail
 
 : "${BOS_ROOT:?BOS_ROOT must point to the Builder OS repository}"
 
-[[ "${BOS_PLATFORM:-$(uname -s | tr '[:upper:]' '[:lower:]')}" == "darwin" && -d /opt/homebrew/bin ]] && export PATH="$PATH:/opt/homebrew/bin"
+if [[ "${BOS_PLATFORM:-$(uname -s | tr '[:upper:]' '[:lower:]')}" == "darwin" ]]; then
+  [[ -d /opt/homebrew/bin ]] && export PATH="$PATH:/opt/homebrew/bin"
+  [[ -d /Applications/Docker.app/Contents/Resources/bin ]] && export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
+fi
 
 bos_load_dotenv() {
   local env_file="$BOS_ROOT/.env"
