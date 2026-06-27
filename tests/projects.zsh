@@ -28,6 +28,7 @@ EOF
 chmod +x "$TEST_TMP/bin/"*
 
 target="$TEST_TMP/generated"
+target="${target:A}"
 output="$("$BOS_ROOT/bin/bos" init demo --path "$target" --yes)"
 assert_contains "$output" "Created and registered demo"
 [[ -f "$target/.bos/project.json" ]] && project_exists=yes || project_exists=no
@@ -131,6 +132,24 @@ assert_eq "$(jq '[.projects[] | select(.name=="existing-project")] | length' "$B
 output="$("$BOS_ROOT/bin/bos" project register "$TEST_TMP/existing-project" --name legacy --type api)"
 assert_contains "$output" "Type: api"
 assert_eq "$(jq -r '.projects[] | select(.name=="legacy") | .type' "$BOS_CONFIG_HOME/projects.json")" "api"
+
+reset_target="$TEST_TMP/reset-project"
+"$BOS_ROOT/bin/bos" init reset-demo --path "$reset_target" --yes >/dev/null
+print -r -- "keep me" > "$reset_target/old-file.txt"
+output="$(printf 'nope\n' | "$BOS_ROOT/bin/bos" project reset reset-demo)"
+assert_contains "$output" "Cancelled."
+[[ -f "$reset_target/old-file.txt" ]] && cancelled_preserved=yes || cancelled_preserved=no
+assert_eq "$cancelled_preserved" "yes"
+
+output="$(printf 'RESET reset-demo\n' | "$BOS_ROOT/bin/bos" project reset reset-demo)"
+assert_contains "$output" "Reset complete."
+assert_contains "$output" "Backup preserved at:"
+[[ -f "$reset_target/.bos/project.json" && ! -f "$reset_target/old-file.txt" ]] && reset_created=yes || reset_created=no
+assert_eq "$reset_created" "yes"
+backup_path="$(print -r -- "$output" | sed -n 's/^.*Backup preserved at: //p' | tail -1)"
+[[ -n "$backup_path" && -f "$backup_path/old-file.txt" ]] && backup_preserved=yes || backup_preserved=no
+assert_eq "$backup_preserved" "yes"
+assert_eq "$(jq -r '.projects[] | select(.name=="reset-demo") | .path' "$BOS_CONFIG_HOME/projects.json")" "${reset_target:A}"
 
 > "$TEST_TMP/docker-calls"
 "$BOS_ROOT/bin/bos" dev demo status >/dev/null

@@ -141,6 +141,7 @@ bos sessions --project my-app
 bos session resume --project my-app
 bos projects                 # List registered projects
 bos project register .       # Register an existing project
+bos project reset my-app     # Backup and recreate a project after confirmation
 bos init my-app              # Create a new project interactively
 bos dev my-app               # Run a generated app through Docker Compose
 bos dev my-app stop          # Stop its local containers
@@ -200,6 +201,18 @@ bos project register .
 
 bos project register ~/Projects/existing-app --name my-app
 ```
+
+Reset a project by preserving a timestamped backup and recreating the BOS
+scaffold at the same path:
+
+```sh
+bos project reset my-app
+bos project reset ~/Projects/my-app --orm prisma
+```
+
+The command asks you to type `RESET <name>` before it moves anything. This is
+different from `bos dev reset`, which only resets Docker Compose volumes for an
+already generated BOS app.
 
 OpenCode conversations remain saved after leaving the TUI. Manage them through
 BOS:

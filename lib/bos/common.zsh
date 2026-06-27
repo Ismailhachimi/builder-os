@@ -306,6 +306,7 @@ Projects:
   open NAME|PATH|. [-- OPENCODE_ARGS...]
   projects
   project register [PATH|.] [--name NAME] [--type TYPE]
+  project reset NAME|PATH|. [--template web] [--orm drizzle|prisma] [--yes]
   sessions [--project NAME|PATH|.] [--all|--projects] [--select] [--limit N] [--json]
   session list [--project NAME|PATH|.] [--all|--projects] [--select] [--limit N] [--json]
   session resume [SESSION_ID] [--project NAME|PATH|.] [--all] [--latest]

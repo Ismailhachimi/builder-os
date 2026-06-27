@@ -71,12 +71,106 @@ bos_project_register() {
   bos_info "Open it with: bos open $name"
 }
 
+bos_project_reset() {
+  bos_ensure_dirs
+  local target="${1:-}"
+  [[ -n "$target" && "$target" != --* ]] || {
+    bos_die "Usage: bos project reset NAME|PATH|. [--template web] [--orm drizzle|prisma] [--yes]"
+    return 1
+  }
+  shift
+
+  local template="web" orm_override="" yes=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --template) template="${2:-}"; shift 2 ;;
+      --orm) orm_override="${2:-}"; shift 2 ;;
+      --yes) yes=1; shift ;;
+      *) bos_die "Unknown project reset option: $1"; return 1 ;;
+    esac
+  done
+
+  local project_dir
+  project_dir="$(bos_resolve_project "$target")" || { bos_die "Project not found: $target"; return 1; }
+  project_dir="${project_dir:A}"
+  [[ -d "$project_dir" ]] || { bos_die "Project directory not found: $project_dir"; return 1; }
+
+  local name registered_name
+  registered_name="$(jq -r --arg path "$project_dir" '.projects[] | select(.path==$path) | .name' "$BOS_PROJECTS" | head -1)"
+  if [[ "$target" != "." && ! -d "$target" && -n "$registered_name" ]]; then
+    name="$registered_name"
+  else
+    name="${registered_name:-${project_dir:t}}"
+  fi
+  [[ -n "$name" ]] || { bos_die "Project name cannot be empty."; return 1; }
+
+  local stamp backup_dir parent
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  parent="${project_dir:h}"
+  backup_dir="$parent/$name.backup-$stamp"
+  while [[ -e "$backup_dir" ]]; do
+    sleep 1
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    backup_dir="$parent/$name.backup-$stamp"
+  done
+
+  cat <<EOF
+This will reset a project by moving the current directory to a backup, then
+creating a fresh BOS project at the original path.
+
+Project:   $name
+Current:   $project_dir
+Backup:    $backup_dir
+Template:  $template
+EOF
+  if [[ -n "$orm_override" ]]; then
+    print -r -- "ORM:       $orm_override"
+  fi
+  print
+  print -r -- "Nothing will be deleted immediately, but the active project path will be replaced."
+
+  if (( ! yes )); then
+    print -n -r -- "Type RESET $name to continue: "
+    local confirm
+    read -r confirm
+    if [[ "$confirm" != "RESET $name" ]]; then
+      bos_info "Cancelled."
+      return 0
+    fi
+  fi
+
+  mv "$project_dir" "$backup_dir" || { bos_die "Could not move project to backup: $backup_dir"; return 1; }
+
+  local init_args=( "$name" --template "$template" --path "$project_dir" --yes )
+  [[ -n "$orm_override" ]] && init_args+=( --orm "$orm_override" )
+
+  if bos_init "${init_args[@]}"; then
+    bos_info "Reset complete."
+    bos_info "Backup preserved at: $backup_dir"
+    return 0
+  fi
+
+  bos_error "Reset failed while creating the new project."
+  local failed_dir="$parent/$name.failed-reset-$stamp"
+  if [[ -e "$project_dir" ]]; then
+    mv "$project_dir" "$failed_dir" 2>/dev/null && bos_error "Partial reset output moved to: $failed_dir"
+  fi
+  if [[ ! -e "$project_dir" ]]; then
+    mv "$backup_dir" "$project_dir" 2>/dev/null && bos_error "Original project restored: $project_dir"
+  else
+    bos_error "Backup remains at: $backup_dir"
+  fi
+  return 1
+}
+
 bos_project() {
   local sub="${1:-}"
   [[ $# -gt 0 ]] && shift
   case "$sub" in
     register) bos_project_register "$@" ;;
-    *) bos_die "Usage: bos project register [PATH|.] [--name NAME] [--type TYPE]"; return 1 ;;
+    reset) bos_project_reset "$@" ;;
+    *) bos_die "Usage: bos project register [PATH|.] [--name NAME] [--type TYPE]
+       bos project reset NAME|PATH|. [--template web] [--orm drizzle|prisma] [--yes]"; return 1 ;;
   esac
 }
 
