@@ -15,6 +15,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh jq
       - name: Validate shell and JSON
         run: |
           zsh -n bin/bos install.sh lib/bos/*.zsh tests/*.zsh benchmark/*.sh benchmark/scenarios/*/*.sh

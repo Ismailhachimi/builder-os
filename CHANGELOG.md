@@ -2,6 +2,15 @@
 
 All notable Builder OS changes will be documented here.
 
+## 0.2.1 - 2026-06-27
+
+- Added `bos project reset` to safely back up and recreate registered projects
+  after an explicit `RESET <name>` confirmation.
+- Preserved the previous project directory as a timestamped backup and restored
+  it when reset scaffolding fails before completion.
+- Installed `zsh` and `jq` in the Linux GitHub Actions job before shell and JSON
+  validation.
+
 ## 0.2.0 - 2026-06-18
 
 - Added Docker and Docker Compose setup to the installer for local app
