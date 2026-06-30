@@ -2,17 +2,6 @@
 
 source "${0:A:h}/test-helper.zsh"
 
-cat > "$TEST_TMP/bin/node" <<'EOF'
-#!/bin/zsh
-[[ "$1" == "-v" ]] && echo v22.13.0
-exit 0
-EOF
-for command_name in pnpm brew; do
-  cat > "$TEST_TMP/bin/$command_name" <<'EOF'
-#!/bin/zsh
-exit 0
-EOF
-done
 cat > "$TEST_TMP/bin/git" <<'EOF'
 #!/bin/zsh
 [[ "$1" == "init" ]] && mkdir -p .git
@@ -23,6 +12,7 @@ cat > "$TEST_TMP/bin/docker" <<EOF
 print -r -- "\$PWD :: \$*" >> "$TEST_TMP/docker-calls"
 [[ "\$*" == "compose version" ]] && exit 0
 [[ "\$*" == "compose config --services" ]] && { print web; print api; print postgres; exit 0; }
+[[ "\$*" == "compose run --rm setup" ]] && exit 0
 [[ "\$*" == "info" ]] && exit 0
 exit 0
 EOF
@@ -60,6 +50,7 @@ assert_eq "$(jq -r '.scripts["dev:docker"]' "$target/package.json")" "docker com
 assert_eq "$(jq -r '.engines.node' "$target/package.json")" ">=22.13"
 assert_eq "$(cat "$target/.nvmrc")" "24"
 assert_eq "$(jq -r '.projects[0].name' "$BOS_CONFIG_HOME/projects.json")" "demo"
+assert_contains "$(cat "$TEST_TMP/docker-calls")" "$target :: compose run --rm setup"
 
 mkdir -p "$TEST_TMP/workspace"
 output="$(cd "$TEST_TMP/workspace" && "$BOS_ROOT/bin/bos" init local-demo --yes)"

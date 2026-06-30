@@ -2,6 +2,11 @@
 
 All notable Builder OS changes will be documented here.
 
+## 0.2.3 - 2026-06-27
+
+- Made `bos init` install generated app dependencies through Docker Compose by
+  default, keeping local Node.js and pnpm as a fallback only.
+
 ## 0.2.2 - 2026-06-27
 
 - Fixed macOS Docker Desktop detection by adding Docker Desktop's bundled CLI to

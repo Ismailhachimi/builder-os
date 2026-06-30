@@ -176,8 +176,9 @@ bos dev --verbose    # Start attached with full Docker output
 ```
 
 Use `bos dev reset` when you want a clean local database. It removes only that
-project's Compose volumes. Host `pnpm dev` is still available when the host
-Node.js and pnpm versions match the generated template.
+project's Compose volumes. `bos init` and `bos dev` use Docker Compose by
+default, so local Node.js and pnpm are only needed for optional host
+development with `pnpm dev`.
 
 The built-in web profile is versioned in `config/templates/web.json`. Custom
 profiles can extend the web generator:

@@ -271,6 +271,19 @@ bos_install_web_tools() {
   fi
 }
 
+bos_install_project_dependencies() {
+  local project_dir="$1"
+  if bos_ensure_docker_runtime; then
+    bos_info "Installing project dependencies with Docker..."
+    (cd "$project_dir" && docker compose run --rm setup)
+    return $?
+  fi
+
+  bos_warn "Docker is unavailable; falling back to local Node.js and pnpm for dependency installation."
+  bos_install_web_tools || return 1
+  (cd "$project_dir" && pnpm install)
+}
+
 bos_init_recoverable_project() {
   local project_dir="$1" name="$2"
   [[ -f "$project_dir/.bos/project.json" ]] || return 1
@@ -752,7 +765,6 @@ bos_init() {
   [[ -f "$template_file" ]] || { bos_die "Unknown template: $template"; return 1; }
   local base_template="$(jq -r '.extends // .name // empty' "$template_file")"
   [[ "$base_template" == "web" ]] || { bos_die "Template $template requires an unsupported generator: $base_template"; return 1; }
-  bos_install_web_tools
   if [[ "$yes" -eq 0 && "$explicit_path" -eq 0 ]]; then
     project_dir="$(bos_prompt_value "Project path" "$project_dir")"
     [[ -n "$project_dir" ]] || { bos_die "Project path cannot be empty."; return 1; }
@@ -824,7 +836,8 @@ EOF
   bos_scaffold_web "$project_dir" "$name" "$description" "$visual" "$database" "$database_url" "$orm" "$auth" "$infrastructure"
   jq --arg template "$template" '.template=$template' "$project_dir/.bos/project.json" > "$project_dir/.bos/project.json.next"
   mv "$project_dir/.bos/project.json.next" "$project_dir/.bos/project.json"
-  (cd "$project_dir" && pnpm install && git init -q && git add . && git -c user.name="Builder OS" -c user.email="builderos@local" commit -qm "Initialize $name")
+  bos_install_project_dependencies "$project_dir" || return 1
+  (cd "$project_dir" && git init -q && git add . && git -c user.name="Builder OS" -c user.email="builderos@local" commit -qm "Initialize $name")
   bos_register_project "$name" "$project_dir" "$template"
   bos_info "Created and registered $name."
   bos_info "Open it with: bos open $name"

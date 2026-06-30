@@ -1,7 +1,7 @@
 # Builder OS
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release: v0.2.2](https://img.shields.io/badge/release-v0.2.2-4c8bf5.svg)](CHANGELOG.md)
+[![Release: v0.2.3](https://img.shields.io/badge/release-v0.2.3-4c8bf5.svg)](CHANGELOG.md)
 
 Builder OS (`bos`) gives macOS and Linux workstations one command for local
 agentic development:
@@ -171,9 +171,9 @@ stack:
 - PostgreSQL and Drizzle ORM by default, with Prisma available as an alternative.
 - Docker Compose runtime for the web app, API, and local database.
 
-Node.js and pnpm are installed automatically for BOS scaffolding when they are
-needed. Generated projects include `compose.yaml`, so the full app can run with
-the Node version pinned inside Docker:
+Generated projects include `compose.yaml`. BOS installs dependencies through
+Docker Compose by default, so local Node.js and pnpm are only needed for the
+optional host-development fallback:
 
 ```sh
 bos dev              # Start web, API, and database
