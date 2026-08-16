@@ -370,54 +370,32 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 EOF
   cat > "$project_dir/compose.yaml" <<EOF
 services:
-  setup:
-    image: node:24-bookworm-slim
-    working_dir: /workspace
-    command: >
-      sh -lc "mkdir -p /pnpm/store /workspace/node_modules /workspace/apps/web/node_modules /workspace/apps/api/node_modules /workspace/packages/contracts/node_modules &&
-      chown -R \${UID:-1000}:\${GID:-1000} /pnpm /workspace/node_modules /workspace/apps/web/node_modules /workspace/apps/api/node_modules /workspace/packages/contracts/node_modules &&
-      corepack pnpm@10.12.1 config set store-dir /pnpm/store &&
-      corepack pnpm@10.12.1 install --no-frozen-lockfile &&
-      chown -R \${UID:-1000}:\${GID:-1000} /pnpm /workspace/node_modules /workspace/apps/web/node_modules /workspace/apps/api/node_modules /workspace/packages/contracts/node_modules"
-    volumes:
-      - .:/workspace
-      - pnpm-store:/pnpm/store
-      - node-modules:/workspace/node_modules
-      - web-node-modules:/workspace/apps/web/node_modules
-      - api-node-modules:/workspace/apps/api/node_modules
-      - contracts-node-modules:/workspace/packages/contracts/node_modules
-
   web:
-    image: node:24-bookworm-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
     working_dir: /workspace
     user: "\${UID:-1000}:\${GID:-1000}"
     command: >
-      sh -lc "corepack pnpm@10.12.1 config set store-dir /pnpm/store &&
-      corepack pnpm@10.12.1 --filter @app/web exec next dev --hostname 0.0.0.0"
+      sh -lc "/usr/local/bin/pnpm --filter @app/web exec next dev --hostname 0.0.0.0"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001
     ports:
       - "3000:3000"
     volumes:
       - .:/workspace
-      - pnpm-store:/pnpm/store
-      - node-modules:/workspace/node_modules
-      - web-node-modules:/workspace/apps/web/node_modules
-      - api-node-modules:/workspace/apps/api/node_modules
-      - contracts-node-modules:/workspace/packages/contracts/node_modules
     depends_on:
-      setup:
-        condition: service_completed_successfully
       api:
         condition: service_started
 
   api:
-    image: node:24-bookworm-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
     working_dir: /workspace
     user: "\${UID:-1000}:\${GID:-1000}"
     command: >
-      sh -lc "corepack pnpm@10.12.1 config set store-dir /pnpm/store &&
-      corepack pnpm@10.12.1 --filter @app/api dev"
+      sh -lc "/usr/local/bin/pnpm --filter @app/api dev"
     environment:
       JWT_SECRET: local-development-only
       DATABASE_URL: $compose_database_url
@@ -425,17 +403,10 @@ services:
       - "3001:3001"
     volumes:
       - .:/workspace
-      - pnpm-store:/pnpm/store
-      - node-modules:/workspace/node_modules
-      - web-node-modules:/workspace/apps/web/node_modules
-      - api-node-modules:/workspace/apps/api/node_modules
-      - contracts-node-modules:/workspace/packages/contracts/node_modules
 EOF
   if [[ "$database" == "postgresql" ]]; then
     cat >> "$project_dir/compose.yaml" <<EOF
     depends_on:
-      setup:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
 
@@ -457,18 +428,11 @@ EOF
       retries: 10
 
 volumes:
-  pnpm-store:
-  node-modules:
-  web-node-modules:
-  api-node-modules:
-  contracts-node-modules:
   postgres-data:
 EOF
   elif [[ "$database" == "mongodb" ]]; then
     cat >> "$project_dir/compose.yaml" <<'EOF'
     depends_on:
-      setup:
-        condition: service_completed_successfully
       mongo:
         condition: service_healthy
 
@@ -479,34 +443,46 @@ EOF
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
 volumes:
-  pnpm-store:
-  node-modules:
-  web-node-modules:
-  api-node-modules:
-  contracts-node-modules:
   mongo-data:
 EOF
-  else
-    cat >> "$project_dir/compose.yaml" <<'EOF'
-    depends_on:
-      setup:
-        condition: service_completed_successfully
-
-volumes:
-  pnpm-store:
-  node-modules:
-  web-node-modules:
-  api-node-modules:
-  contracts-node-modules:
-EOF
   fi
+  cat > "$project_dir/Dockerfile" <<'EOF'
+FROM node:24-bookworm-slim
+
+# Install pnpm globally during build (requires internet once)
+RUN npm install -g pnpm@10.12.1
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy all source code (node_modules excluded via .dockerignore)
+COPY . .
+
+# Install all dependencies during build (requires internet once)
+RUN pnpm install --no-frozen-lockfile
+EOF
+  cat > "$project_dir/.dockerignore" <<'EOF'
+node_modules/
+.next/
+dist/
+.turbo/
+.env
+.env.*
+!.env.example
+.buildstamp
+.pnpm-store/
+.pnpm-install.lock
+.DS_Store
+.git/
+.gitignore
+Dockerfile
+compose.yaml
+.dockerignore
+README.md
+*.md
+EOF
   cat > "$project_dir/README.md" <<EOF
 # $name
 
