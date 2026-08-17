@@ -522,6 +522,80 @@ pnpm dev
 
 See \`PRODUCT.md\` for the product and design brief.
 EOF
+  cat > "$project_dir/AGENTS.md" <<EOF
+# Agent Instructions
+
+## Core Principles
+
+- Inspect and plan before editing.
+- Preserve the Turbo workspace boundaries.
+- Put shared API schemas in \`packages/contracts\`.
+- Validate external input with Zod or Nest validation.
+- Keep secrets in \`.env.local\`; update \`.env.example\` with placeholders.
+- Run relevant lint, test, and build commands before finishing.
+
+## Project State
+
+### Stack
+
+- **Package Manager:** pnpm@10.12.1
+- **Node.js:** \`\`>=22.13\`\`
+- **Frontend:** Next.js 15.3.3, React 19.1.0, Tailwind 4.1.8, TypeScript 5.8.3
+- **UI:** shadcn/ui (new-york style, RSC, CSS variables)
+- **Backend:** NestJS with global validation, security headers, health endpoint, and JWT skeleton.
+- **Database:** $data_stack.
+- **Auth:** $auth authentication.
+- **Validation:** Zod schemas centralized in \`packages/contracts/src/index.ts\`.
+- **Infrastructure target:** $infrastructure.
+
+### Architecture
+
+- Web: Next.js App Router with Tailwind and a shadcn/ui-compatible component structure.
+- API: NestJS with global validation, security headers, health endpoint, and JWT skeleton.
+- Contracts: shared Zod schemas and inferred TypeScript types.
+- Data: $data_stack.
+- Local development: Docker Compose runs the web app, API, and local services.
+- Future infrastructure target: $infrastructure.
+
+### Key Decisions
+
+- BOS CLI is the only valid container management method — never run \`docker compose\` directly; use \`bos\` CLI commands.
+- Documentation (agents.md, product.md, roadmap.md) must be updated with project state for AI agents.
+- Need a memory/cache system for AI agents to track project state and reference roadmap/product items.
+
+### BOS CLI Commands
+
+\`\`\`sh
+bos dev              # Start web app, API, and local services
+bos dev stop         # Stop all services
+bos dev reset        # Reset and rebuild everything
+bos start            # Start containers
+bos stop             # Stop containers
+bos restart          # Restart containers
+bos status           # Check container status
+bos logs             # View container logs
+bos top              # View container resource usage
+bos projects         # List/manage projects
+bos sessions         # Manage BOS sessions
+bos models           # Manage AI models
+\`\`\`
+
+### Private Documentation
+
+- \`docs/private/specs/full.md\` — Complete product specification (when available).
+- \`docs/private/specs/details/\` — Detailed spec breakdowns.
+- \`docs/private/conversations/\` — Transaction notes and transcripts.
+- \`docs/private/reports/\` — Business reports and project state.
+
+## Workflow
+
+1. Inspect the codebase state before making changes.
+2. Update documentation files (AGENTS.md, PRODUCT.md, ROADMAP.md) when project state changes.
+3. Use BOS CLI for all container management — never run commands locally.
+4. Keep private specs in \`docs/private/\` directory.
+5. Update memory/cache system when project state changes (see \`docs/private/reports/\`).
+EOF
+
   cat > "$project_dir/PRODUCT.md" <<EOF
 # Product Brief
 
@@ -541,17 +615,98 @@ $visual
 - Data: $data_stack.
 - Local development: Docker Compose runs the web app, API, and local services.
 - Future infrastructure target: $infrastructure.
-EOF
-  cat > "$project_dir/AGENTS.md" <<'EOF'
-# Agent Instructions
 
-- Inspect and plan before editing.
-- Preserve the Turbo workspace boundaries.
-- Put shared API schemas in `packages/contracts`.
-- Validate external input with Zod or Nest validation.
-- Keep secrets in `.env.local`; update `.env.example` with placeholders.
-- Run relevant lint, test, and build commands before finishing.
+## Tech Stack
+
+- **Package Manager:** pnpm@10.12.1
+- **Node.js:** \`\`>=22.13\`\`
+- **Frontend:** Next.js 15.3.3, React 19.1.0, Tailwind 4.1.8, TypeScript 5.8.3
+- **UI:** shadcn/ui (new-york style, RSC, CSS variables)
+- **Backend:** NestJS with global validation, security headers, health endpoint, and JWT skeleton.
+- **Database:** $data_stack.
+- **Auth:** $auth authentication.
+- **Validation:** Zod schemas centralized in \`packages/contracts/src/index.ts\`.
+- **Infrastructure target:** $infrastructure.
+
+## Private Documentation
+
+- \`docs/private/specs/full.md\` — Complete product specification (when available).
+- \`docs/private/specs/details/\` — Detailed spec breakdowns.
+- \`docs/private/conversations/\` — Transaction notes and transcripts.
+- \`docs/private/reports/\` — Business reports and project state.
 EOF
+
+  cat > "$project_dir/ROADMAP.md" <<EOF
+# Product Roadmap
+
+## Phase 1: Foundation (Current)
+
+- [x] Project scaffolding with \`bos init\`
+- [x] Turbo workspace with pnpm monorepo
+- [x] Next.js 15.3.3 frontend with Tailwind 4.1.8
+- [x] NestJS backend with global validation
+- [x] Shared Zod contracts in \`packages/contracts\`
+- [x] Database setup ($data_stack)
+- [x] Authentication ($auth)
+- [x] Docker Compose local development
+- [x] BOS CLI integration
+
+## Phase 2: Core Features
+
+- [ ] User management and authentication flows
+- [ ] Role-based access control (RBAC)
+- [ ] Organization and team management
+- [ ] Core business entities (CRUD operations)
+- [ ] File upload and document management
+- [ ] Real-time notifications
+- [ ] Search and filtering
+- [ ] Export and reporting
+
+## Phase 3: Advanced Features
+
+- [ ] AI-powered insights (excluded from MVP)
+- [ ] Advanced analytics dashboard
+- [ ] Workflow automation
+- [ ] Third-party integrations
+- [ ] Multi-tenancy enhancements
+
+## Infrastructure
+
+- **Target:** $infrastructure
+- **Local:** Docker Compose with PostgreSQL/MongoDB
+- **Staging:** $infrastructure (to be configured)
+- **Production:** $infrastructure (to be configured)
+
+## Notes
+
+- AI features explicitly excluded from MVP (Phase 3+).
+- Documentation (agents.md, product.md, roadmap.md) must be updated with project state for AI agents.
+- Need a memory/cache system for AI agents to track project state and reference roadmap/product items.
+EOF
+
+  mkdir -p "$project_dir/docs/private/reports"
+  cat > "$project_dir/docs/private/reports/project-state.json" <<EOF
+{
+  "schema_version": 2,
+  "name": "$name",
+  "template": "web",
+  "description": "$description",
+  "visual_direction": "$visual",
+  "database": "$database",
+  "orm": "$orm",
+  "auth": "$auth",
+  "infrastructure": "$infrastructure",
+  "created_at": "$(date -u +%FT%TZ)",
+  "last_updated": "$(date -u +%FT%TZ)",
+  "modules": [],
+  "frontend_pages": [],
+  "backend_endpoints": [],
+  "api_client_functions": [],
+  "docker_containers": [],
+  "status": "initialized"
+}
+EOF
+
   jq -n --arg name "$name" --arg description "$description" --arg visual "$visual" --arg database "$database" --arg orm "$orm" --arg auth "$auth" --arg infrastructure "$infrastructure" '
     {schema_version:2,name:$name,template:"web",description:$description,visual_direction:$visual,database:$database,orm:$orm,auth:$auth,infrastructure:$infrastructure}
   ' > "$project_dir/.bos/project.json"
