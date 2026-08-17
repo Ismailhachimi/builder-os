@@ -2,6 +2,13 @@
 
 All notable Builder OS changes will be documented here.
 
+## 0.2.4 - 2026-08-17
+
+- Made `bos_scaffold_web` generate documentation files automatically during `bos
+  init`: `AGENTS.md`, `PRODUCT.md`, `ROADMAP.md`, and
+  `docs/private/reports/project-state.json`.
+- Added structured project-state JSON template for AI agent memory/cache system.
+
 ## 0.2.3 - 2026-06-27
 
 - Made `bos init` install generated app dependencies through Docker Compose by
